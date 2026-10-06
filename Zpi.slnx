@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Api/Zpi.Api.csproj" />
+    <Project Path="src/Database/Zpi.Database.csproj" />
+    <Project Path="src/Domain/Zpi.Domain.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/">
+    <Project Path="src/Modules/Identity/Zpi.Modules.Identity.csproj" />
+    <Project Path="src/Modules/Care/Zpi.Modules.Care.csproj" />
+    <Project Path="src/Modules/SeniorProfile/Zpi.Modules.SeniorProfile.csproj" />
+    <Project Path="src/Modules/Safety/Zpi.Modules.Safety.csproj" />
+    <Project Path="src/Modules/Routines/Zpi.Modules.Routines.csproj" />
+    <Project Path="src/Modules/MedicalRecords/Zpi.Modules.MedicalRecords.csproj" />
+    <Project Path="src/Modules/Notifications/Zpi.Modules.Notifications.csproj" />
+  </Folder>
+</Solution>
