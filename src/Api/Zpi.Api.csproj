@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><UserSecretsId>zpi-backend-local</UserSecretsId></PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
     <ProjectReference Include="../Modules/Identity/Zpi.Modules.Identity.csproj" />
     <ProjectReference Include="../Modules/Care/Zpi.Modules.Care.csproj" />
     <ProjectReference Include="../Modules/SeniorProfile/Zpi.Modules.SeniorProfile.csproj" />

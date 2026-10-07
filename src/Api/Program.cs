@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Scalar.AspNetCore;
+using Zpi.Api;
 using Zpi.Modules.Identity;
 using Zpi.Modules.Care;
 using Zpi.Modules.SeniorProfile;
@@ -9,6 +11,7 @@ using Zpi.Modules.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
+builder.Services.AddApiDocumentation();
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddCareModule(builder.Configuration);
 builder.Services.AddSeniorProfileModule(builder.Configuration);
@@ -19,6 +22,19 @@ builder.Services.AddNotificationsModule(builder.Configuration);
 
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseRouting();
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference("/docs", options => options.WithTitle("ZPI API"));
+}
 app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 app.Run();
+
+
+public partial class Program;

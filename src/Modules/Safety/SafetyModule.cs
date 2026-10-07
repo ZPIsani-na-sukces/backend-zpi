@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Zpi.Database;
+using Zpi.Domain;
 using Zpi.Modules.Safety.Persistence;
 
 namespace Zpi.Modules.Safety;
@@ -9,6 +10,7 @@ public static class SafetyModule
 {
     public static IServiceCollection AddSafetyModule(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddScoped<IAccountDataCleanup, AccountDataCleanup>();
         var connectionString = DatabaseConfiguration.GetConnectionString(configuration);
         services.AddDbContext<SafetyDbContext>(options =>
             DatabaseConfiguration.Configure(options, connectionString, SafetyDbContext.Schema));

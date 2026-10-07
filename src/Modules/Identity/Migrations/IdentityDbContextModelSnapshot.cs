@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using Zpi.Modules.Identity.Persistence;
+using Zpi.Modules.Identity.Infrastructure.Persistence;
 
 #nullable disable
 
@@ -87,6 +87,10 @@ namespace Zpi.Modules.Identity.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTimeOffset?>("DeletionRequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deletion_requested_at");
+
                     b.Property<string>("Email")
                         .HasMaxLength(254)
                         .HasColumnType("character varying(254)")
@@ -139,6 +143,10 @@ namespace Zpi.Modules.Identity.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("role_id");
 
+                    b.Property<Guid>("SecurityStamp")
+                        .HasColumnType("uuid")
+                        .HasColumnName("security_stamp");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -155,6 +163,8 @@ namespace Zpi.Modules.Identity.Migrations
                         .HasColumnName("version");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DeletionRequestedAt");
 
                     b.HasIndex("NormalizedEmail")
                         .IsUnique();
@@ -176,101 +186,9 @@ namespace Zpi.Modules.Identity.Migrations
 
                             t.HasCheckConstraint("ck_account_phone", "phone_number ~ '^\\+[1-9][0-9]{1,14}$'");
 
-                            t.HasCheckConstraint("ck_account_status", "status IN ('pendingPhoneVerification','active','blocked')");
+                            t.HasCheckConstraint("ck_account_status", "status IN ('pendingPhoneVerification','active','blocked','pendingDeletion')");
 
                             t.HasCheckConstraint("ck_account_version", "version >= 1");
-                        });
-                });
-
-            modelBuilder.Entity("Zpi.Modules.Identity.Domain.AccountSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<Guid>("AccountId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("account_id");
-
-                    b.Property<string>("ClientType")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("client_type");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expires_at");
-
-                    b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("revoked_at");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer")
-                        .HasColumnName("version");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId");
-
-                    b.ToTable("account_session", "identity", t =>
-                        {
-                            t.HasCheckConstraint("ck_account_session_client_type", "client_type IN ('web','mobile')");
-
-                            t.HasCheckConstraint("ck_account_session_expiration", "expires_at > created_at");
-
-                            t.HasCheckConstraint("ck_account_session_version", "version >= 1");
-                        });
-                });
-
-            modelBuilder.Entity("Zpi.Modules.Identity.Domain.RefreshToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTimeOffset?>("ConsumedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("consumed_at");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expires_at");
-
-                    b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("revoked_at");
-
-                    b.Property<Guid>("SessionId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("session_id");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("token_hash");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SessionId");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.ToTable("refresh_token", "identity", t =>
-                        {
-                            t.HasCheckConstraint("ck_refresh_token_expiration", "expires_at > created_at");
                         });
                 });
 
@@ -450,24 +368,6 @@ namespace Zpi.Modules.Identity.Migrations
                     b.HasOne("Zpi.Modules.Identity.Domain.Role", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Zpi.Modules.Identity.Domain.AccountSession", b =>
-                {
-                    b.HasOne("Zpi.Modules.Identity.Domain.Account", null)
-                        .WithMany()
-                        .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Zpi.Modules.Identity.Domain.RefreshToken", b =>
-                {
-                    b.HasOne("Zpi.Modules.Identity.Domain.AccountSession", null)
-                        .WithMany()
-                        .HasForeignKey("SessionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

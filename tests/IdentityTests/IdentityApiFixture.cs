@@ -1,0 +1,127 @@
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Npgsql;
+using StackExchange.Redis;
+using Zpi.Database;
+using Zpi.Modules.Care.Persistence;
+using Zpi.Modules.Identity.Infrastructure.Persistence;
+using Zpi.Modules.MedicalRecords.Persistence;
+using Zpi.Modules.Notifications.Persistence;
+using Zpi.Modules.Routines.Persistence;
+using Zpi.Modules.Safety.Persistence;
+using Zpi.Modules.SeniorProfile.Persistence;
+
+namespace Zpi.IdentityTests;
+
+[CollectionDefinition("Identity API")]
+public sealed class IdentityApiCollection : ICollectionFixture<IdentityApiFixture>;
+
+public sealed class PostgresFactAttribute : FactAttribute
+{
+    public PostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ZPI_TEST_DATABASE")) ||
+            string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ZPI_TEST_REDIS")))
+            Skip = "Set ZPI_TEST_DATABASE and ZPI_TEST_REDIS to run integration tests.";
+    }
+}
+
+public sealed class PostgresTheoryAttribute : TheoryAttribute
+{
+    public PostgresTheoryAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ZPI_TEST_DATABASE")) ||
+            string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ZPI_TEST_REDIS")))
+            Skip = "Set ZPI_TEST_DATABASE and ZPI_TEST_REDIS to run integration tests.";
+    }
+}
+
+public sealed class IdentityApiFixture : IAsyncLifetime
+{
+    private string? adminConnection;
+    private string? databaseName;
+    public string RedisConnectionString { get; private set; } = "";
+    public string RedisPrefix { get; } = $"zpi:test:{Guid.CreateVersion7():N}:";
+    public string ConnectionString { get; private set; } = "";
+
+    public async Task InitializeAsync()
+    {
+        var original = Environment.GetEnvironmentVariable("ZPI_TEST_DATABASE");
+        RedisConnectionString = Environment.GetEnvironmentVariable("ZPI_TEST_REDIS") ?? "";
+        if (string.IsNullOrWhiteSpace(original) || string.IsNullOrWhiteSpace(RedisConnectionString)) return;
+        var builder = new NpgsqlConnectionStringBuilder(original);
+        adminConnection = builder.ConnectionString;
+        databaseName = "zpi_identity_tests_" + Guid.CreateVersion7().ToString("N");
+        await using var connection = new NpgsqlConnection(adminConnection);
+        await connection.OpenAsync();
+        await using var create = new NpgsqlCommand($"CREATE DATABASE {databaseName}", connection);
+        await create.ExecuteNonQueryAsync();
+        builder.Database = databaseName;
+        ConnectionString = builder.ConnectionString;
+        await using var context = Context();
+        await context.Database.MigrateAsync();
+        await using var factory = Factory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        foreach (var type in new[] { typeof(CareDbContext), typeof(SeniorProfileDbContext), typeof(SafetyDbContext),
+            typeof(RoutinesDbContext), typeof(MedicalRecordsDbContext), typeof(NotificationsDbContext) })
+            await ((DbContext)scope.ServiceProvider.GetRequiredService(type)).Database.MigrateAsync();
+    }
+
+    public IdentityDbContext Context()
+    {
+        var options = new DbContextOptionsBuilder<IdentityDbContext>();
+        DatabaseConfiguration.Configure(options, ConnectionString, IdentityDbContext.Schema);
+        return new IdentityDbContext(options.Options);
+    }
+
+    public WebApplicationFactory<Program> Factory() => new ApiFactory(ConnectionString, RedisConnectionString, RedisPrefix);
+
+    public async Task DisposeAsync()
+    {
+        if (databaseName is null || adminConnection is null) return;
+        using var redis = await ConnectionMultiplexer.ConnectAsync(RedisConnectionString);
+        foreach (var endpoint in redis.GetEndPoints())
+        {
+            await foreach (var key in redis.GetServer(endpoint).KeysAsync(database: redis.GetDatabase().Database, pattern: RedisPrefix + "*"))
+                await redis.GetDatabase().KeyDeleteAsync(key);
+        }
+        NpgsqlConnection.ClearAllPools();
+        await using var connection = new NpgsqlConnection(adminConnection);
+        await connection.OpenAsync();
+        await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS {databaseName} WITH (FORCE)", connection);
+        await drop.ExecuteNonQueryAsync();
+    }
+
+    private sealed class ApiFactory(string connectionString, string redisConnectionString, string redisPrefix) : WebApplicationFactory<Program>
+    {
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            builder.ConfigureHostConfiguration(configuration => configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Database"] = connectionString,
+                ["ConnectionStrings:Redis"] = redisConnectionString,
+                ["Redis:KeyPrefix"] = redisPrefix,
+                ["AccountDeletion:Enabled"] = "false",
+                ["Authentication:SigningKey"] = new string('k', 64)
+            }));
+            return base.CreateHost(builder);
+        }
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Database"] = connectionString,
+                ["ConnectionStrings:Redis"] = redisConnectionString,
+                ["Redis:KeyPrefix"] = redisPrefix,
+                ["AccountDeletion:Enabled"] = "false",
+                ["Authentication:SigningKey"] = new string('k', 64)
+            }));
+        }
+    }
+}

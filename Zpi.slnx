@@ -13,4 +13,7 @@
     <Project Path="src/Modules/MedicalRecords/Zpi.Modules.MedicalRecords.csproj" />
     <Project Path="src/Modules/Notifications/Zpi.Modules.Notifications.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IdentityTests/Zpi.IdentityTests.csproj" />
+  </Folder>
 </Solution>

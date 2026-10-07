@@ -4,5 +4,6 @@ public enum AccountStatus
 {
     PendingPhoneVerification,
     Active,
-    Blocked
+    Blocked,
+    PendingDeletion
 }

@@ -14,6 +14,8 @@ public sealed class Account : VersionedEntity
     public required string FirstName { get; set; }
     public required string LastName { get; set; }
     public AccountStatus Status { get; set; }
+    public Guid SecurityStamp { get; set; } = Guid.CreateVersion7();
+    public DateTimeOffset? DeletionRequestedAt { get; set; }
     public DateTimeOffset? PhoneVerifiedAt { get; set; }
     public DateTimeOffset? EmailVerifiedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
