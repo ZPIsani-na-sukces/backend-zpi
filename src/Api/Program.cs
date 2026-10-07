@@ -12,7 +12,7 @@ using Zpi.Modules.Notifications;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 builder.Services.AddApiDocumentation();
-builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddIdentityModule(builder.Configuration, builder.Environment);
 builder.Services.AddCareModule(builder.Configuration);
 builder.Services.AddSeniorProfileModule(builder.Configuration);
 builder.Services.AddSafetyModule(builder.Configuration);

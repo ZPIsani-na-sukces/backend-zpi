@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +11,7 @@ using StackExchange.Redis;
 using Zpi.Database;
 using Zpi.Modules.Care.Persistence;
 using Zpi.Modules.Identity.Infrastructure.Persistence;
+using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.MedicalRecords.Persistence;
 using Zpi.Modules.Notifications.Persistence;
 using Zpi.Modules.Routines.Persistence;
@@ -114,6 +117,13 @@ public sealed class IdentityApiFixture : IAsyncLifetime
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<TestPhoneCodeSender>();
+                services.AddSingleton<IPhoneCodeSender>(provider => provider.GetRequiredService<TestPhoneCodeSender>());
+                services.AddSingleton<TestEmailCodeSender>();
+                services.AddSingleton<IEmailCodeSender>(provider => provider.GetRequiredService<TestEmailCodeSender>());
+            });
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Database"] = connectionString,
@@ -124,4 +134,36 @@ public sealed class IdentityApiFixture : IAsyncLifetime
             }));
         }
     }
+}
+
+public sealed class TestPhoneCodeSender : IPhoneCodeSender
+{
+    private readonly ConcurrentDictionary<Guid, string> codes = new();
+
+    public bool IsAvailable => true;
+
+    public Task SendAsync(Guid challengeId, string phoneNumber, string code, CancellationToken cancellationToken)
+    {
+        codes[challengeId] = code;
+        return Task.CompletedTask;
+    }
+
+    public string CodeFor(Guid challengeId) => codes[challengeId];
+    public bool HasCodeFor(Guid challengeId) => codes.ContainsKey(challengeId);
+}
+
+public sealed class TestEmailCodeSender : IEmailCodeSender
+{
+    private readonly ConcurrentDictionary<Guid, string> codes = new();
+
+    public bool IsAvailable => true;
+
+    public Task SendAsync(Guid challengeId, string email, string code, CancellationToken cancellationToken)
+    {
+        codes[challengeId] = code;
+        return Task.CompletedTask;
+    }
+
+    public string CodeFor(Guid challengeId) => codes[challengeId];
+    public bool HasCodeFor(Guid challengeId) => codes.ContainsKey(challengeId);
 }

@@ -11,6 +11,9 @@ using Zpi.Modules.Identity.Application.Accounts.DeleteAccount;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Login;
 using Zpi.Modules.Identity.Application.Authentication.Logout;
+using Zpi.Modules.Identity.Application.Authentication.EmailVerification;
+using Zpi.Modules.Identity.Application.Authentication.PasswordReset;
+using Zpi.Modules.Identity.Application.Authentication.PhoneVerification;
 using Zpi.Modules.Identity.Application.Authentication.Refresh;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Api.Validation;
@@ -34,11 +37,110 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
     [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
     [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
     public async Task<IActionResult> Register(RegisterCommand request, [FromServices] RegisterHandler handler, CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
         var result = await handler.Handle(request, cancellationToken);
         return result.Failure is null ? Created("/api/v1/me", result.Value) : Failure(result);
+    }
+
+    [HttpPost("phone-verifications")]
+    [TypeFilter(typeof(ValidationFilter<StartPhoneVerificationCommand>))]
+    [AllowAnonymous]
+    [EnableRateLimiting("authentication")]
+    [RequestSizeLimit(32_768)]
+    [ProducesResponseType<ChallengeDto>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    public async Task<IActionResult> StartPhoneVerification(StartPhoneVerificationCommand command,
+        [FromServices] StartPhoneVerificationHandler handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(command, cancellationToken);
+        return result.Failure is null ? Accepted(result.Value) : Failure(result);
+    }
+
+    [HttpPost("phone-verifications/confirm")]
+    [TypeFilter(typeof(ValidationFilter<ConfirmPhoneVerificationCommand>))]
+    [AllowAnonymous]
+    [EnableRateLimiting("authentication")]
+    [RequestSizeLimit(32_768)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<IActionResult> ConfirmPhoneVerification(ConfirmPhoneVerificationCommand command,
+        [FromServices] ConfirmPhoneVerificationHandler handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(command, cancellationToken);
+        return result.Failure is null ? NoContent() : Failure(result);
+    }
+
+    [HttpPost("email-verifications")]
+    [Authorize]
+    [EnableRateLimiting("authentication")]
+    [ProducesResponseType<ChallengeDto>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    public async Task<IActionResult> StartEmailVerification([FromServices] StartEmailVerificationHandler handler,
+        CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await handler.Handle(new StartEmailVerificationCommand(AccountId()), cancellationToken);
+        return result.Failure is null ? Accepted(result.Value) : Failure(result);
+    }
+
+    [HttpPost("email-verifications/confirm")]
+    [TypeFilter(typeof(ValidationFilter<ConfirmEmailVerificationCommand>))]
+    [AllowAnonymous]
+    [EnableRateLimiting("authentication")]
+    [RequestSizeLimit(32_768)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<IActionResult> ConfirmEmailVerification(ConfirmEmailVerificationCommand command,
+        [FromServices] ConfirmEmailVerificationHandler handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.Handle(command, cancellationToken);
+        return result.Failure is null ? NoContent() : Failure(result);
+    }
+
+    [HttpPost("password-reset-requests")]
+    [TypeFilter(typeof(ValidationFilter<RequestPasswordResetCommand>))]
+    [AllowAnonymous]
+    [EnableRateLimiting("authentication")]
+    [RequestSizeLimit(32_768)]
+    [ProducesResponseType<ChallengeDto>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    public async Task<IActionResult> RequestPasswordReset(RequestPasswordResetCommand command,
+        [FromServices] RequestPasswordResetHandler handler, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await handler.Handle(command, cancellationToken);
+        return result.Failure is null ? Accepted(result.Value) : Failure(result);
+    }
+
+    [HttpPost("password-resets")]
+    [TypeFilter(typeof(ValidationFilter<ResetPasswordCommand>))]
+    [AllowAnonymous]
+    [EnableRateLimiting("authentication")]
+    [RequestSizeLimit(32_768)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordCommand command, [FromServices] ResetPasswordHandler handler,
+        CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await handler.Handle(command, cancellationToken);
+        return result.Failure is null ? NoContent() : Failure(result);
     }
 
     [HttpPost("login")]
@@ -189,6 +291,9 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
         {
             AuthenticationFailure.DuplicateAccount => (409, "invalidState", "An account with these details already exists."),
             AuthenticationFailure.InvalidCredentials => (401, "invalidCredentials", "Invalid credentials."),
+            AuthenticationFailure.InvalidCode => (400, "invalidCode", "Invalid or expired verification code or ticket."),
+            AuthenticationFailure.InvalidState => (409, "invalidState", "This operation is not available in the current state."),
+            AuthenticationFailure.DeliveryUnavailable => (503, "deliveryUnavailable", "Message delivery is unavailable."),
             _ => (403, "operationForbidden", "This operation is not allowed.")
         };
         return ProblemResponse(AuthenticationProblem.Create(HttpContext, status, code, description));

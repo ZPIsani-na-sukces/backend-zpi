@@ -21,4 +21,7 @@ public sealed class PasswordHashing
     public string Hash(Account account, string password) => hasher.HashPassword(account, password);
     public PasswordVerificationResult Verify(Account? account, string password) =>
         hasher.VerifyHashedPassword(account ?? dummy, account?.PasswordHash ?? dummyHash, password);
+
+    public PasswordVerificationResult VerifySecret(Account account, string hash, string secret) =>
+        hasher.VerifyHashedPassword(account, hash, secret);
 }

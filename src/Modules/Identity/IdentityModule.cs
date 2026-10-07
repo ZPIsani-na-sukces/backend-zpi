@@ -1,19 +1,33 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Zpi.Modules.Identity.Api;
 using Zpi.Modules.Identity.Application;
+using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.Identity.Infrastructure.BackgroundJobs;
+using Zpi.Modules.Identity.Infrastructure.Email;
 using Zpi.Modules.Identity.Infrastructure.Persistence;
 using Zpi.Modules.Identity.Infrastructure.Redis;
+using Zpi.Modules.Identity.Infrastructure.Sms;
 
 namespace Zpi.Modules.Identity;
 
 public static class IdentityModule
 {
-    public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         services.AddSingleton(TimeProvider.System);
+        if (environment.IsDevelopment())
+        {
+            services.AddSingleton<IPhoneCodeSender, DevelopmentPhoneCodeSender>();
+            services.AddSingleton<IEmailCodeSender, DevelopmentEmailCodeSender>();
+        }
+        else
+        {
+            services.AddSingleton<IPhoneCodeSender, UnavailablePhoneCodeSender>();
+            services.AddSingleton<IEmailCodeSender, UnavailableEmailCodeSender>();
+        }
         services.AddIdentityApplication();
         services.AddIdentityApi();
         services.AddIdentityAuthentication(configuration);

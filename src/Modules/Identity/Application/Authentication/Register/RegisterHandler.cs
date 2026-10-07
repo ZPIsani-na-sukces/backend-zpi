@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
@@ -7,10 +5,12 @@ using Zpi.Modules.Identity.Infrastructure.Persistence;
 
 namespace Zpi.Modules.Identity.Application.Authentication.Register;
 
-public sealed class RegisterHandler(IdentityDbContext context, PasswordHashing passwords, TimeProvider clock)
+public sealed class RegisterHandler(IdentityDbContext context, PasswordHashing passwords, IPhoneCodeSender sender, TimeProvider clock)
 {
     public async Task<AuthenticationResult<RegistrationDto>> Handle(RegisterCommand request, CancellationToken cancellationToken)
     {
+        if (!sender.IsAvailable)
+            return AuthenticationResult<RegistrationDto>.Failed(AuthenticationFailure.DeliveryUnavailable);
         var phone = request.PhoneNumber.Trim();
         var email = request.Email?.Trim();
         var normalizedEmail = email?.ToUpperInvariant();
@@ -37,21 +37,11 @@ public sealed class RegisterHandler(IdentityDbContext context, PasswordHashing p
         account.PasswordHash = passwords.Hash(account, request.Password);
         context.Accounts.Add(account);
         var (ticket, secret) = VerificationTickets.Create(context, account.Id, now);
-        var code = RandomNumberGenerator.GetInt32(1_000_000).ToString("D6", CultureInfo.InvariantCulture);
-        var challenge = new VerificationChallenge
-        {
-            AccountId = account.Id,
-            TicketId = ticket.Id,
-            Purpose = ChallengePurpose.PhoneVerification,
-            Channel = ChallengeChannel.Sms,
-            Destination = phone,
-            SecretHash = passwords.Hash(account, code),
-            CreatedAt = now,
-            ExpiresAt = now.AddMinutes(5),
-            ResendAfter = now.AddSeconds(60)
-        };
+        var (challenge, code) = VerificationChallengeFactory.Create(account, ChallengePurpose.PhoneVerification,
+            ChallengeChannel.Sms, phone, passwords, now, ticket);
         context.VerificationChallenges.Add(challenge);
         await context.SaveChangesAsync(cancellationToken);
+        await sender.SendAsync(challenge.Id, phone, code, cancellationToken);
         return AuthenticationResult<RegistrationDto>.Success(new RegistrationDto(account.Id, "pendingPhoneVerification",
             secret, ticket.ExpiresAt, new ChallengeDto(challenge.Id, "sms", challenge.ExpiresAt, challenge.ResendAfter)));
     }
