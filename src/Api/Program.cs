@@ -13,6 +13,9 @@ using Zpi.Modules.Notifications;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApiErrorHandling();
 builder.Services.AddApiDocumentation();
+if (builder.Environment.IsDevelopment())
+    builder.Services.AddHostedService<DevelopmentDatabaseMigrationService>();
+
 builder.Services.AddIdentityModule(builder.Configuration, builder.Environment);
 builder.Services.AddCareModule(builder.Configuration);
 builder.Services.AddSeniorProfileModule(builder.Configuration);
