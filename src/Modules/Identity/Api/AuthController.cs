@@ -16,7 +16,6 @@ using Zpi.Modules.Identity.Application.Authentication.PasswordReset;
 using Zpi.Modules.Identity.Application.Authentication.PhoneVerification;
 using Zpi.Modules.Identity.Application.Authentication.Refresh;
 using Zpi.Modules.Identity.Application.Authentication.Register;
-using Zpi.Modules.Identity.Api.Validation;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 
@@ -25,11 +24,10 @@ namespace Zpi.Modules.Identity.Api;
 [ApiController]
 [Route("api/v1/auth")]
 [Tags("Authentication")]
-[ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+[ProducesResponseType<AuthenticationProblem>(StatusCodes.Status500InternalServerError, "application/problem+json")]
 public sealed class AuthController(IOptions<AuthenticationOptions> settings) : ControllerBase
 {
     [HttpPost("registrations")]
-    [TypeFilter(typeof(ValidationFilter<RegisterCommand>))]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -46,7 +44,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpPost("phone-verifications")]
-    [TypeFilter(typeof(ValidationFilter<StartPhoneVerificationCommand>))]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -63,7 +60,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpPost("phone-verifications/confirm")]
-    [TypeFilter(typeof(ValidationFilter<ConfirmPhoneVerificationCommand>))]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -95,7 +91,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpPost("email-verifications/confirm")]
-    [TypeFilter(typeof(ValidationFilter<ConfirmEmailVerificationCommand>))]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -111,7 +106,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpPost("password-reset-requests")]
-    [TypeFilter(typeof(ValidationFilter<RequestPasswordResetCommand>))]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -128,7 +122,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpPost("password-resets")]
-    [TypeFilter(typeof(ValidationFilter<ResetPasswordCommand>))]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -144,7 +137,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpPost("login")]
-    [TypeFilter(typeof(ValidationFilter<LoginCommand>))]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -164,7 +156,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpPost("refresh")]
-    [TypeFilter(typeof(ValidationFilter<RefreshRequest>))]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -199,7 +190,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpPut("password")]
-    [TypeFilter(typeof(ValidationFilter<ChangePasswordRequest>))]
     [Authorize]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
@@ -216,7 +206,6 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     }
 
     [HttpDelete("/api/v1/me")]
-    [TypeFilter(typeof(ValidationFilter<DeleteAccountRequest>))]
     [Authorize]
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]

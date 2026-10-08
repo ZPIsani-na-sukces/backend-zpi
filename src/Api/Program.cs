@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 using Zpi.Api;
+using Zpi.Api.ErrorHandling;
 using Zpi.Modules.Identity;
 using Zpi.Modules.Care;
 using Zpi.Modules.SeniorProfile;
@@ -10,7 +11,7 @@ using Zpi.Modules.MedicalRecords;
 using Zpi.Modules.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddProblemDetails();
+builder.Services.AddApiErrorHandling();
 builder.Services.AddApiDocumentation();
 builder.Services.AddIdentityModule(builder.Configuration, builder.Environment);
 builder.Services.AddCareModule(builder.Configuration);
@@ -22,6 +23,7 @@ builder.Services.AddNotificationsModule(builder.Configuration);
 
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseStatusCodePages();
 app.UseRouting();
 app.UseRateLimiter();
 app.UseAuthentication();

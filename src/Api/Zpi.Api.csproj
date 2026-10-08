@@ -4,6 +4,7 @@
     <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="FluentValidation" />
     <ProjectReference Include="../Modules/Identity/Zpi.Modules.Identity.csproj" />
     <ProjectReference Include="../Modules/Care/Zpi.Modules.Care.csproj" />
     <ProjectReference Include="../Modules/SeniorProfile/Zpi.Modules.SeniorProfile.csproj" />
