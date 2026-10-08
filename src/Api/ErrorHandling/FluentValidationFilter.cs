@@ -1,4 +1,3 @@
-using System.Text.Json;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -17,15 +16,14 @@ public sealed class FluentValidationFilter : IAsyncActionFilter
             var validatorType = typeof(IValidator<>).MakeGenericType(type);
             foreach (var validator in context.HttpContext.RequestServices.GetServices(validatorType).Cast<IValidator>())
             {
-                var validationContext = (IValidationContext)Activator.CreateInstance(typeof(ValidationContext<>).MakeGenericType(type), argument)!;
+                var validationContext = new ValidationContext<object>(argument);
                 var result = await validator.ValidateAsync(validationContext, context.HttpContext.RequestAborted);
                 failures.AddRange(result.Errors);
             }
         }
         if (failures.Count > 0)
         {
-            var errors = failures.GroupBy(error => JsonNamingPolicy.CamelCase.ConvertName(error.PropertyName))
-                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).Distinct().ToArray());
+            var errors = ValidationErrors.FromFailures(failures);
             context.Result = ApiErrorHandling.ValidationProblem(context.HttpContext, errors);
             return;
         }

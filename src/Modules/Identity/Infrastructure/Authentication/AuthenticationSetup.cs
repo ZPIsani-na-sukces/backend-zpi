@@ -5,7 +5,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Zpi.Modules.Identity.Api.Errors;
 using Zpi.Modules.Identity.Application.Sessions;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Persistence;
@@ -41,6 +40,7 @@ public static class AuthenticationSetup
                     NameClaimType = "sub",
                     RoleClaimType = "role"
                 };
+                jwt.IncludeErrorDetails = false;
                 jwt.Events = new JwtBearerEvents
                 {
                     OnTokenValidated = async context =>
@@ -56,14 +56,7 @@ public static class AuthenticationSetup
                             await database.Accounts.AsNoTracking().AnyAsync(account => account.Id == accountId &&
                                 account.Status == AccountStatus.Active && account.PhoneVerifiedAt != null && account.SecurityStamp == session.SecurityStamp, context.HttpContext.RequestAborted);
                         if (!valid) context.Fail("Session is no longer active.");
-                    },
-                    OnChallenge = context =>
-                    {
-                        context.HandleResponse();
-                        context.Response.Headers.WWWAuthenticate = "Bearer";
-                        return AuthenticationProblem.WriteAsync(context.HttpContext, 401, "unauthenticated");
-                    },
-                    OnForbidden = context => AuthenticationProblem.WriteAsync(context.HttpContext, 403, "operationForbidden")
+                    }
                 };
             });
         services.AddAuthorization();

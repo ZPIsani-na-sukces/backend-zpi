@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
-using Zpi.Modules.Identity.Api.Errors;
 using Zpi.Modules.Identity.Application.Accounts;
 using Zpi.Modules.Identity.Application.Accounts.ChangePassword;
 using Zpi.Modules.Identity.Application.Accounts.CurrentAccount;
@@ -24,7 +23,7 @@ namespace Zpi.Modules.Identity.Api;
 [ApiController]
 [Route("api/v1/auth")]
 [Tags("Authentication")]
-[ProducesResponseType<AuthenticationProblem>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
 public sealed class AuthController(IOptions<AuthenticationOptions> settings) : ControllerBase
 {
     [HttpPost("registrations")]
@@ -32,10 +31,10 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<RegistrationDto>(StatusCodes.Status201Created)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
     public async Task<IActionResult> Register(RegisterCommand request, [FromServices] RegisterHandler handler, CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
@@ -48,10 +47,10 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<ChallengeDto>(StatusCodes.Status202Accepted)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
     public async Task<IActionResult> StartPhoneVerification(StartPhoneVerificationCommand command,
         [FromServices] StartPhoneVerificationHandler handler, CancellationToken cancellationToken)
     {
@@ -64,9 +63,9 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
     public async Task<IActionResult> ConfirmPhoneVerification(ConfirmPhoneVerificationCommand command,
         [FromServices] ConfirmPhoneVerificationHandler handler, CancellationToken cancellationToken)
     {
@@ -78,10 +77,10 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [Authorize]
     [EnableRateLimiting("authentication")]
     [ProducesResponseType<ChallengeDto>(StatusCodes.Status202Accepted)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
     public async Task<IActionResult> StartEmailVerification([FromServices] StartEmailVerificationHandler handler,
         CancellationToken cancellationToken)
     {
@@ -95,9 +94,9 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status409Conflict, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
     public async Task<IActionResult> ConfirmEmailVerification(ConfirmEmailVerificationCommand command,
         [FromServices] ConfirmEmailVerificationHandler handler, CancellationToken cancellationToken)
     {
@@ -110,9 +109,9 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<ChallengeDto>(StatusCodes.Status202Accepted)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
     public async Task<IActionResult> RequestPasswordReset(RequestPasswordResetCommand command,
         [FromServices] RequestPasswordResetHandler handler, CancellationToken cancellationToken)
     {
@@ -126,8 +125,8 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
     public async Task<IActionResult> ResetPassword(ResetPasswordCommand command, [FromServices] ResetPasswordHandler handler,
         CancellationToken cancellationToken)
     {
@@ -141,15 +140,15 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<SessionDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")]
-    [ProducesResponseType<PhoneVerificationProblem>(StatusCodes.Status403Forbidden, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> Login(LoginCommand request, [FromServices] LoginHandler handler, CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
         if (request.ClientType == ClientType.Web && !HasAllowedOrigin())
-            return ProblemResponse(AuthenticationProblem.Create(HttpContext, 403, "operationForbidden", "The web origin is not allowed."));
+            return ProblemResponse(403, "operationForbidden", "The web origin is not allowed.");
         var result = await handler.Handle(request, cancellationToken);
         if (result.Failure is not null) return Failure(result);
         return SessionResponse(result.Value!, request.ClientType);
@@ -160,15 +159,15 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<SessionDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status403Forbidden, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> Refresh(RefreshRequest request, [FromServices] RefreshHandler handler, CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
         if (request.ClientType == ClientType.Web && !HasAllowedOrigin())
-            return ProblemResponse(AuthenticationProblem.Create(HttpContext, 403, "operationForbidden", "The web origin is not allowed."));
+            return ProblemResponse(403, "operationForbidden", "The web origin is not allowed.");
         var result = await handler.Handle(new RefreshCommand(request, Request.Cookies["zpi_refresh_token"]), cancellationToken);
         if (result.Failure is not null)
         {
@@ -181,7 +180,7 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [HttpPost("logout")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     public async Task<IActionResult> Logout([FromServices] LogoutHandler handler, CancellationToken cancellationToken)
     {
         await handler.Handle(new LogoutCommand(Guid.Parse(User.FindFirst("sid")!.Value)), cancellationToken);
@@ -194,9 +193,9 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, [FromServices] ChangePasswordHandler handler, CancellationToken cancellationToken)
     {
         var result = await handler.Handle(new ChangePasswordCommand(AccountId(), request), cancellationToken);
@@ -210,9 +209,9 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [EnableRateLimiting("authentication")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<AccountDeletionDto>(StatusCodes.Status202Accepted)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> DeleteAccount(DeleteAccountRequest request, [FromServices] DeleteAccountHandler handler, CancellationToken cancellationToken)
     {
         var result = await handler.Handle(new DeleteAccountCommand(AccountId(), request.Password), cancellationToken);
@@ -252,7 +251,7 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     [HttpGet("/api/v1/me")]
     [Authorize]
     [ProducesResponseType<AccountDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType<AuthenticationProblem>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     public async Task<IActionResult> Me([FromServices] CurrentAccountHandler handler, CancellationToken cancellationToken)
     {
         var id = Guid.Parse(User.FindFirst("sub")!.Value);
@@ -275,7 +274,13 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     private IActionResult Failure<T>(AuthenticationResult<T> result)
     {
         if (result.Failure == AuthenticationFailure.PhoneVerificationRequired)
-            return ProblemResponse(new PhoneVerificationProblem(HttpContext, result.Verification!));
+            return Problem(statusCode: 403, detail: "Verify your phone number before signing in.",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "phoneVerificationRequired",
+                    ["verificationTicket"] = result.Verification!.VerificationTicket,
+                    ["ticketExpiresAt"] = result.Verification.TicketExpiresAt
+                });
         var (status, code, description) = result.Failure switch
         {
             AuthenticationFailure.DuplicateAccount => (409, "invalidState", "An account with these details already exists."),
@@ -285,12 +290,9 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
             AuthenticationFailure.DeliveryUnavailable => (503, "deliveryUnavailable", "Message delivery is unavailable."),
             _ => (403, "operationForbidden", "This operation is not allowed.")
         };
-        return ProblemResponse(AuthenticationProblem.Create(HttpContext, status, code, description));
+        return ProblemResponse(status, code, description);
     }
 
-    private ObjectResult ProblemResponse(AuthenticationProblem problem) => new(problem)
-    {
-        StatusCode = problem.Status,
-        ContentTypes = { "application/problem+json" }
-    };
+    private ObjectResult ProblemResponse(int status, string code, string detail) =>
+        Problem(statusCode: status, detail: detail, extensions: new Dictionary<string, object?> { ["code"] = code });
 }
