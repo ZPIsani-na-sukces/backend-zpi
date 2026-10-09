@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Zpi.Api.ErrorHandling;
 
@@ -31,6 +32,15 @@ internal sealed class ExpectedExceptionHandler(IProblemDetailsService problemDet
                     Status = hasPrecondition ? StatusCodes.Status412PreconditionFailed : StatusCodes.Status409Conflict,
                     Detail = "The resource has changed. Reload it before retrying.",
                     Extensions = { ["code"] = hasPrecondition ? "versionMismatch" : "invalidState" }
+                };
+                break;
+            case DbUpdateException update when update.InnerException is PostgresException postgres &&
+                postgres.SqlState == PostgresErrorCodes.UniqueViolation:
+                problem = new ProblemDetails
+                {
+                    Status = StatusCodes.Status409Conflict,
+                    Detail = "The operation conflicts with an existing resource.",
+                    Extensions = { ["code"] = "invalidState" }
                 };
                 break;
             default:

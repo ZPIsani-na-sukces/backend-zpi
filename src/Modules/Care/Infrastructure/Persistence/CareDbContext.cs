@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Care.Domain;
 using Zpi.Database.Outbox;
 
-namespace Zpi.Modules.Care.Persistence;
+namespace Zpi.Modules.Care.Infrastructure.Persistence;
 
 public sealed class CareDbContext(DbContextOptions<CareDbContext> options) : DbContext(options)
 {

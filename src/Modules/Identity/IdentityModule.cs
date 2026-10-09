@@ -2,6 +2,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Zpi.Modules.Identity.Api;
+using Zpi.Modules.Identity.Contracts;
+using Zpi.Modules.Identity.Infrastructure;
 using Zpi.Modules.Identity.Application;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
@@ -28,6 +30,7 @@ public static class IdentityModule
             services.AddSingleton<IPhoneCodeSender, UnavailablePhoneCodeSender>();
             services.AddSingleton<IEmailCodeSender, UnavailableEmailCodeSender>();
         }
+        services.AddScoped<IIdentityFacade, IdentityFacade>();
         services.AddIdentityApplication();
         services.AddIdentityApi();
         services.AddIdentityAuthentication(configuration);

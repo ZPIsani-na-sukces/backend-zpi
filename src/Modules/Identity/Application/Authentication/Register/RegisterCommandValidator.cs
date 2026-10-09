@@ -13,6 +13,6 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
         RuleFor(request => request.PhoneNumber).NotEmpty().Matches(@"\A\+[1-9][0-9]{1,14}\z");
         RuleFor(request => request.Email).EmailAddress().MaximumLength(254);
         RuleFor(request => request.Email).NotEmpty().When(request => request.Role == AccountRole.Caretaker);
-        RuleFor(request => request.Password).NotNull().Length(12, 128);
+        RuleFor(request => request.Password).NotNull().Length(8, 128);
     }
 }

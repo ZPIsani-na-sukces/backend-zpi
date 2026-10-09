@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Zpi.Database;
 
-namespace Zpi.Modules.Care.Persistence;
+namespace Zpi.Modules.Care.Infrastructure.Persistence;
 
 public sealed class CareDbContextFactory : IDesignTimeDbContextFactory<CareDbContext>
 {

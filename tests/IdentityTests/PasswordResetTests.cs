@@ -12,9 +12,102 @@ namespace Zpi.IdentityTests;
 [Collection("Identity API")]
 public sealed class PasswordResetTests(IdentityApiFixture fixture)
 {
-    private const string OldPassword = "A long password 123!";
-    private const string NewPassword = "A newer password 456!";
+    private const string OldPassword = "OldPass1";
+    private const string NewPassword = "NewPass2";
     private static string Phone() => "+48" + RandomNumberGenerator.GetInt32(100_000_000, 999_999_999);
+
+    [PostgresFact]
+    public async Task Verification_rejects_phone_confirmation_codes_unknown_and_expired_challenges()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var registration = await Register(client, phone, null, "senior");
+        var sender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+        var phoneCode = sender.CodeFor(registration.PhoneChallenge.ChallengeId);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneCode })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify",
+            new { challengeId = Guid.CreateVersion7(), code = phoneCode })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneCode })).StatusCode);
+        var start = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel = "sms", identifier = phone });
+        var challenge = (await start.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        await using (var context = fixture.Context())
+        {
+            var stored = await context.VerificationChallenges.SingleAsync(row => row.Id == challenge.ChallengeId);
+            stored.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+            stored.CreatedAt = stored.ExpiresAt.AddMinutes(-5);
+            stored.ResendAfter = stored.CreatedAt.AddSeconds(60);
+            await context.SaveChangesAsync();
+        }
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify",
+            new { challengeId = challenge.ChallengeId, code = sender.CodeFor(challenge.ChallengeId) })).StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Code_verification_does_not_consume_code_and_reset_still_requires_correct_code()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var registration = await Register(client, phone, null, "senior");
+        var sender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = sender.CodeFor(registration.PhoneChallenge.ChallengeId) })).StatusCode);
+        var start = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel = "sms", identifier = phone });
+        var challenge = (await start.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var code = sender.CodeFor(challenge.ChallengeId);
+        var body = new { challengeId = challenge.ChallengeId, code };
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var response = await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify", body);
+            Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+            Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        }
+        await using (var context = fixture.Context())
+        {
+            var stored = await context.VerificationChallenges.SingleAsync(row => row.Id == challenge.ChallengeId);
+            Assert.Null(stored.ConsumedAt);
+            Assert.Equal(0, stored.Attempts);
+        }
+        var wrong = code == "000000" ? "000001" : "000000";
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
+            new { challengeId = challenge.ChallengeId, code = wrong, newPassword = NewPassword })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
+            new { challengeId = challenge.ChallengeId, code, newPassword = NewPassword })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify", body)).StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Verification_and_reset_share_wrong_code_attempt_limit()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var registration = await Register(client, phone, null, "senior");
+        var sender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = sender.CodeFor(registration.PhoneChallenge.ChallengeId) })).StatusCode);
+        var start = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel = "sms", identifier = phone });
+        var challenge = (await start.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var code = sender.CodeFor(challenge.ChallengeId);
+        var wrong = code == "000000" ? "000001" : "000000";
+        for (var attempt = 0; attempt < 3; attempt++)
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify",
+                new { challengeId = challenge.ChallengeId, code = wrong })).StatusCode);
+        for (var attempt = 0; attempt < 2; attempt++)
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
+                new { challengeId = challenge.ChallengeId, code = wrong, newPassword = NewPassword })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify",
+            new { challengeId = challenge.ChallengeId, code })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
+            new { challengeId = challenge.ChallengeId, code, newPassword = NewPassword })).StatusCode);
+        await using var context = fixture.Context();
+        var stored = await context.VerificationChallenges.SingleAsync(row => row.Id == challenge.ChallengeId);
+        Assert.Equal(5, stored.Attempts);
+        Assert.NotNull(stored.InvalidatedAt);
+    }
 
     [PostgresFact]
     public async Task Sms_reset_changes_password_and_revokes_existing_session()

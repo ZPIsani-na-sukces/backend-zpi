@@ -120,6 +120,21 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
         return result.Failure is null ? Accepted(result.Value) : Failure(result);
     }
 
+    [HttpPost("password-resets/verify")]
+    [AllowAnonymous]
+    [EnableRateLimiting("authentication")]
+    [RequestSizeLimit(32_768)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<IActionResult> VerifyPasswordResetCode(VerifyPasswordResetCodeCommand command,
+        [FromServices] VerifyPasswordResetCodeHandler handler, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await handler.Handle(command, cancellationToken);
+        return result.Failure is null ? NoContent() : Failure(result);
+    }
+
     [HttpPost("password-resets")]
     [AllowAnonymous]
     [EnableRateLimiting("authentication")]

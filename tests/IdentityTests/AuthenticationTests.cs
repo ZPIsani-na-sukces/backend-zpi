@@ -122,7 +122,7 @@ public sealed class AuthenticationTests(IdentityApiFixture fixture)
         using var client = factory.CreateClient();
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/registrations", Registration(Phone(), "caretaker"))).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/registrations", Registration("123"))).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/registrations", Registration(Phone(), password: "short"))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/registrations", Registration(Phone(), password: "1234567"))).StatusCode);
     }
 
     [PostgresFact]
@@ -291,7 +291,7 @@ public sealed class AuthenticationTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/refresh", new { clientType = "mobile" })).StatusCode);
         client.DefaultRequestHeaders.Add("Origin", "http://localhost");
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/refresh", new { clientType = "web", refreshToken = session.RefreshToken })).StatusCode);
-        var change = await client.PutAsJsonAsync("/api/v1/auth/password", new { currentPassword = Password, newPassword = "short" });
+        var change = await client.PutAsJsonAsync("/api/v1/auth/password", new { currentPassword = Password, newPassword = "1234567" });
         Assert.Equal(HttpStatusCode.BadRequest, change.StatusCode);
         using var body = JsonDocument.Parse(await change.Content.ReadAsStringAsync());
         Assert.True(body.RootElement.GetProperty("errors").TryGetProperty("newPassword", out _));

@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Zpi.Database;
-using Zpi.Domain;
-using Zpi.Modules.Care.Persistence;
+using Zpi.Modules.Care.Api;
+using Zpi.Modules.Care.Application;
+using Zpi.Modules.Care.Contracts;
+using Zpi.Modules.Care.Infrastructure;
+using Zpi.Modules.Care.Infrastructure.Persistence;
 
 namespace Zpi.Modules.Care;
 
@@ -10,11 +12,10 @@ public static class CareModule
 {
     public static IServiceCollection AddCareModule(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddScoped<IAccountDataCleanup, AccountDataCleanup>();
-        var connectionString = DatabaseConfiguration.GetConnectionString(configuration);
-        services.AddDbContext<CareDbContext>(options =>
-            DatabaseConfiguration.Configure(options, connectionString, CareDbContext.Schema));
-        services.AddHealthChecks().AddCheck<DatabaseHealthCheck<CareDbContext>>("Care", tags: ["ready"]);
+        services.AddScoped<ICareFacade, CareFacade>();
+        services.AddCareApplication();
+        services.AddCareApi();
+        services.AddCarePersistence(configuration);
         return services;
     }
 }

@@ -3,6 +3,7 @@
     <Project Path="src/Api/Zpi.Api.csproj" />
     <Project Path="src/Database/Zpi.Database.csproj" />
     <Project Path="src/Domain/Zpi.Domain.csproj" />
+    <Project Path="src/Shared/Zpi.Shared.csproj" />
   </Folder>
   <Folder Name="/src/Modules/">
     <Project Path="src/Modules/Identity/Zpi.Modules.Identity.csproj" />

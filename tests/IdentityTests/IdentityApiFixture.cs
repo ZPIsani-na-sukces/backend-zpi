@@ -9,7 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Npgsql;
 using StackExchange.Redis;
 using Zpi.Database;
-using Zpi.Modules.Care.Persistence;
+using Zpi.Modules.Care.Infrastructure.Persistence;
 using Zpi.Modules.Identity.Infrastructure.Persistence;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.MedicalRecords.Persistence;

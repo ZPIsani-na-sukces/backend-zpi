@@ -28,6 +28,8 @@ public static class IdentityApplicationSetup
         services.AddScoped<ConfirmEmailVerificationHandler>();
         services.AddScoped<RequestPasswordResetHandler>();
         services.AddScoped<ResetPasswordHandler>();
+        services.AddScoped<PasswordResetCodeVerifier>();
+        services.AddScoped<VerifyPasswordResetCodeHandler>();
         services.AddScoped<ChangePasswordHandler>();
         services.AddScoped<CurrentAccountHandler>();
         services.AddScoped<DeleteAccountHandler>();

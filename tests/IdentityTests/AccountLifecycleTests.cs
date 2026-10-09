@@ -127,7 +127,7 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         var first = await Login(client, phone);
         var second = await Login(client, phone);
         Bearer(client, first);
-        const string newPassword = "New long password 456!";
+        const string newPassword = "NewPass2";
         var store = factory.Services.GetRequiredService<ISessionStore>();
         var staleSession = (await store.GetAsync(Id(first), CancellationToken.None))!;
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync("/api/v1/auth/password", new { currentPassword = "wrong", newPassword })).StatusCode);

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zpi.Modules.Care.Domain;
 using Zpi.Database;
 
-namespace Zpi.Modules.Care.Persistence.Configurations;
+namespace Zpi.Modules.Care.Infrastructure.Persistence.Configurations;
 
 internal sealed class SeniorCareRelationshipConfiguration : IEntityTypeConfiguration<SeniorCareRelationship>
 {

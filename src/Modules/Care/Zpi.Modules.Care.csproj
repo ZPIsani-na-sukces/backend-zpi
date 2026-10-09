@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../Identity/Zpi.Modules.Identity.csproj" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <ProjectReference Include="../../Database/Zpi.Database.csproj" />
     <ProjectReference Include="../../Domain/Zpi.Domain.csproj" />
+    <ProjectReference Include="../../Shared/Zpi.Shared.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
 </Project>

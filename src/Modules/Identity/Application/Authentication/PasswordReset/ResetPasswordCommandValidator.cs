@@ -8,6 +8,6 @@ public sealed class ResetPasswordCommandValidator : AbstractValidator<ResetPassw
     {
         RuleFor(command => command.ChallengeId).NotEmpty();
         RuleFor(command => command.Code).NotEmpty().MaximumLength(256);
-        RuleFor(command => command.NewPassword).NotNull().Length(12, 128);
+        RuleFor(command => command.NewPassword).NotNull().Length(8, 128);
     }
 }

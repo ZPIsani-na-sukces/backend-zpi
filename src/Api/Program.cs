@@ -13,6 +13,7 @@ using Zpi.Modules.Notifications;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApiErrorHandling();
 builder.Services.AddApiDocumentation();
+builder.Services.AddApiCors(builder.Configuration);
 if (builder.Environment.IsDevelopment())
     builder.Services.AddHostedService<DevelopmentDatabaseMigrationService>();
 
@@ -28,8 +29,9 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseRouting();
-app.UseRateLimiter();
+app.UseCors();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
 if (app.Environment.IsDevelopment())

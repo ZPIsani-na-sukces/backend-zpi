@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentValidation;
+using Npgsql;
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
@@ -130,6 +131,8 @@ public sealed class ApiErrorHandlingTests
     [InlineData("concurrency", 409, "invalidState")]
     [InlineData("problem", 409, "invalidState")]
     [InlineData("not-found", 404, "resourceNotFound")]
+    [InlineData("duplicate", 409, "invalidState")]
+    [InlineData("database-error", 500, "internalServerError")]
     public async Task Errors_from_handlers_and_mvc_use_the_shared_contract(string path, int status, string code)
     {
         await using var app = await CreateApp();
@@ -140,6 +143,7 @@ public sealed class ApiErrorHandlingTests
         Assert.Equal(status, (int)response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.DoesNotContain("sensitive-database-marker", body.RootElement.ToString());
         Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
         Assert.Equal(status, body.RootElement.GetProperty("status").GetInt32());
         Assert.Equal($"/probe/{path}", body.RootElement.GetProperty("instance").GetString());
@@ -264,6 +268,14 @@ public sealed class ProbeController : ControllerBase
         new ValidationFailure("Contacts[0].PhoneNumber", "Invalid phone number."),
         new ValidationFailure("Contacts[0].PhoneNumber", "Invalid phone number.")
     ]);
+
+    [HttpGet("duplicate")]
+    public IActionResult ThrowDuplicate() => throw new DbUpdateException("sensitive-database-marker",
+        new PostgresException("sensitive-database-marker", "ERROR", "ERROR", PostgresErrorCodes.UniqueViolation));
+
+    [HttpGet("database-error")]
+    public IActionResult ThrowDatabaseError() => throw new DbUpdateException("sensitive-database-marker",
+        new PostgresException("sensitive-database-marker", "ERROR", "ERROR", PostgresErrorCodes.CheckViolation));
 
     [HttpGet("concurrency")]
     public IActionResult ThrowConcurrency() => throw new DbUpdateConcurrencyException("sensitive-concurrency-marker");
