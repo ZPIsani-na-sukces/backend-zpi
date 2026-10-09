@@ -30,9 +30,12 @@ public sealed class AcceptInvitationHandler(CareDbContext context, IIdentityFaca
         }
         if (invitation.Status != InvitationStatus.Pending)
             return CareResult<CareRelationshipDto>.Failed(CareFailure.InvalidState);
-        if (await context.SeniorCareRelationships.AnyAsync(relationship => relationship.SeniorId == invitation.SeniorId &&
-            relationship.CaretakerId == invitation.CaretakerId && relationship.Status == RelationshipStatus.Active, cancellationToken))
-            return CareResult<CareRelationshipDto>.Failed(CareFailure.RelationshipAlreadyExists);
+        var active = await context.SeniorCareRelationships.FirstOrDefaultAsync(relationship => relationship.SeniorId == invitation.SeniorId &&
+            relationship.CaretakerId == invitation.CaretakerId && relationship.Status == RelationshipStatus.Active, cancellationToken);
+        if (active is not null)
+            return active.InvitationId == invitation.Id
+                ? CareResult<CareRelationshipDto>.Success(CareDtoMapper.Relationship(active, accounts))
+                : CareResult<CareRelationshipDto>.Failed(CareFailure.RelationshipAlreadyExists);
         var relationship = new SeniorCareRelationship
         {
             InvitationId = invitation.Id,

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Zpi.Database;
 using Zpi.Modules.Identity.Api;
 using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.Identity.Infrastructure;
@@ -19,7 +20,7 @@ public static class IdentityModule
 {
     public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
-        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<TimeProvider>(new PostgresTimeProvider());
         if (environment.IsDevelopment())
         {
             services.AddSingleton<IPhoneCodeSender, DevelopmentPhoneCodeSender>();
