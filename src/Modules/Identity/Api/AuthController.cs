@@ -289,13 +289,23 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     private IActionResult Failure<T>(AuthenticationResult<T> result)
     {
         if (result.Failure == AuthenticationFailure.PhoneVerificationRequired)
-            return Problem(statusCode: 403, detail: "Verify your phone number before signing in.",
-                extensions: new Dictionary<string, object?>
-                {
-                    ["code"] = "phoneVerificationRequired",
-                    ["verificationTicket"] = result.Verification!.VerificationTicket,
-                    ["ticketExpiresAt"] = result.Verification.TicketExpiresAt
-                });
+        {
+            var extensions = new Dictionary<string, object?>
+            {
+                ["code"] = "phoneVerificationRequired",
+                ["verificationTicket"] = result.Verification!.VerificationTicket,
+                ["ticketExpiresAt"] = result.Verification.TicketExpiresAt
+            };
+            if (result.Verification.PhoneChallenge is not null)
+                extensions["phoneChallenge"] = result.Verification.PhoneChallenge;
+            return Problem(statusCode: 403, detail: "Verify your phone number before signing in.", extensions: extensions);
+        }
+        if (result.Failure == AuthenticationFailure.ResendCooldown)
+        {
+            var seconds = Math.Max(1, (int)Math.Ceiling(result.RetryAfter!.Value.TotalSeconds));
+            Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return ProblemResponse(429, "rateLimitExceeded", "Wait before requesting another code.");
+        }
         var (status, code, description) = result.Failure switch
         {
             AuthenticationFailure.DuplicateAccount => (409, "invalidState", "An account with these details already exists."),

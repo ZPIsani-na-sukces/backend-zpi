@@ -8,5 +8,6 @@ public enum AuthenticationFailure
     PhoneVerificationRequired,
     InvalidCode,
     InvalidState,
-    DeliveryUnavailable
+    DeliveryUnavailable,
+    ResendCooldown
 }

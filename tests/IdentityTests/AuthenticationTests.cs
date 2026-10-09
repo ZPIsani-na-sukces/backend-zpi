@@ -95,7 +95,9 @@ public sealed class AuthenticationTests(IdentityApiFixture fixture)
         await client.PostAsJsonAsync("/api/v1/auth/registrations", Registration(phone));
         var bad = await client.PostAsJsonAsync("/api/v1/auth/login", new { identifier = phone, password = "Wrong password", clientType = "mobile" });
         Assert.Equal(HttpStatusCode.Unauthorized, bad.StatusCode);
-        Assert.DoesNotContain("verificationTicket", await bad.Content.ReadAsStringAsync());
+        var badBody = await bad.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("verificationTicket", badBody);
+        Assert.DoesNotContain("phoneChallenge", badBody);
         var good = await client.PostAsJsonAsync("/api/v1/auth/login", new { identifier = phone, password = Password, clientType = "mobile" });
         Assert.Equal(HttpStatusCode.Forbidden, good.StatusCode);
         using var json = JsonDocument.Parse(await good.Content.ReadAsStringAsync());
