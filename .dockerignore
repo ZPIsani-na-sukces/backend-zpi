@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+.git/
+.github/
+.vs/
+.idea/
+tests/
+artifacts/
+TestResults/
+.env
+.env.*
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+**/appsettings.local.json
+**/appsettings.*.local.json
+*.md
+docker-compose.yml

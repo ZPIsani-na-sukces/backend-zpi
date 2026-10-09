@@ -14,7 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApiErrorHandling();
 builder.Services.AddApiDocumentation();
 builder.Services.AddApiCors(builder.Configuration);
-if (builder.Environment.IsDevelopment())
+if (builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
     builder.Services.AddHostedService<DevelopmentDatabaseMigrationService>();
 
 builder.Services.AddIdentityModule(builder.Configuration, builder.Environment);
