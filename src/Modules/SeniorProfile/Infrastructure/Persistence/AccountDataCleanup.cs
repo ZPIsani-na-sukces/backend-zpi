@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Zpi.Domain;
 
-namespace Zpi.Modules.SeniorProfile.Persistence;
+namespace Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 internal sealed class AccountDataCleanup(SeniorProfileDbContext context) : IAccountDataCleanup
 {

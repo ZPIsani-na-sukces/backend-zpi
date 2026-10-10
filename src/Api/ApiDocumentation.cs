@@ -59,6 +59,21 @@ public static class ApiDocumentation
                 }
                 if (metadata.OfType<EnableRateLimitingAttribute>().Any())
                     AddProblemResponse(operation, "429", problemSchema);
+                foreach (var parameter in operation.Parameters?.OfType<OpenApiParameter>() ?? [])
+                {
+                    if (parameter.In == ParameterLocation.Header && parameter.Name == "If-Match")
+                    {
+                        parameter.Required = true;
+                        parameter.Schema = new OpenApiSchema { Type = JsonSchemaType.String, Pattern = "^\"[0-9]+\"$" };
+                    }
+                }
+                if (context.Description.SupportedResponseTypes.Any(response => response.StatusCode == 200 &&
+                    response.Type?.GetProperty("Version") is not null) &&
+                    operation.Responses.TryGetValue("200", out var success) && success is OpenApiResponse response)
+                {
+                    response.Headers ??= new Dictionary<string, IOpenApiHeader>();
+                    response.Headers["ETag"] = new OpenApiHeader { Schema = new OpenApiSchema { Type = JsonSchemaType.String } };
+                }
                 if (context.Description.RelativePath is "api/v1/auth/login" or "api/v1/auth/refresh")
                 {
                     operation.Parameters ??= [];

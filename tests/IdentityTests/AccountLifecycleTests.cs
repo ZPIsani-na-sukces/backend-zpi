@@ -16,7 +16,7 @@ using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Modules.Notifications.Persistence;
 using Zpi.Modules.SeniorProfile.Domain;
-using Zpi.Modules.SeniorProfile.Persistence;
+using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 namespace Zpi.IdentityTests;
 

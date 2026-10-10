@@ -16,7 +16,7 @@ using Zpi.Modules.MedicalRecords.Persistence;
 using Zpi.Modules.Notifications.Persistence;
 using Zpi.Modules.Routines.Persistence;
 using Zpi.Modules.Safety.Persistence;
-using Zpi.Modules.SeniorProfile.Persistence;
+using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 namespace Zpi.IdentityTests;
 

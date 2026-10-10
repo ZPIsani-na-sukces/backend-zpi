@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.SeniorProfile.Domain;
 using Zpi.Database.Outbox;
 
-namespace Zpi.Modules.SeniorProfile.Persistence;
+namespace Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 public sealed class SeniorProfileDbContext(DbContextOptions<SeniorProfileDbContext> options) : DbContext(options)
 {

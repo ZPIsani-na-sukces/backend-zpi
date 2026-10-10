@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using Zpi.Modules.SeniorProfile.Persistence;
+using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 #nullable disable
 

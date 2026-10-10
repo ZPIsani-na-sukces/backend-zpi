@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Zpi.Database;
 
-namespace Zpi.Modules.SeniorProfile.Persistence;
+namespace Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 public sealed class SeniorProfileDbContextFactory : IDesignTimeDbContextFactory<SeniorProfileDbContext>
 {

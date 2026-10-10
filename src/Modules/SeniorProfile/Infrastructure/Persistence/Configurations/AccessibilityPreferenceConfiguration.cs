@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zpi.Modules.SeniorProfile.Domain;
 using Zpi.Database;
 
-namespace Zpi.Modules.SeniorProfile.Persistence.Configurations;
+namespace Zpi.Modules.SeniorProfile.Infrastructure.Persistence.Configurations;
 
 internal sealed class AccessibilityPreferenceConfiguration : IEntityTypeConfiguration<AccessibilityPreference>
 {

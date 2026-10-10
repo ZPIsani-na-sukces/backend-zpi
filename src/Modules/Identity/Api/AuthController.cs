@@ -16,6 +16,7 @@ using Zpi.Modules.Identity.Application.Authentication.PhoneVerification;
 using Zpi.Modules.Identity.Application.Authentication.Refresh;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Domain;
+using Zpi.Shared.Versioning;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 
 namespace Zpi.Modules.Identity.Api;
@@ -271,7 +272,7 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     {
         var id = Guid.Parse(User.FindFirst("sub")!.Value);
         var account = await handler.Handle(new CurrentAccountQuery(id), cancellationToken);
-        Response.Headers.ETag = $"\"{account.Version}\"";
+        Response.Headers.ETag = EntityTag.FromVersion(account.Version);
         Response.Headers.CacheControl = "no-store";
         return Ok(account);
     }
