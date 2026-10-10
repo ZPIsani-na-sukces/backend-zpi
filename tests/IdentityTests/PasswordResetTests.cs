@@ -6,6 +6,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Register;
+using Zpi.Modules.Identity.Application.Accounts.VerificationStatus;
+using Zpi.Modules.Identity.Domain;
 
 namespace Zpi.IdentityTests;
 
@@ -145,8 +147,10 @@ public sealed class PasswordResetTests(IdentityApiFixture fixture)
             new { identifier = phone, password = NewPassword, clientType = "mobile" })).StatusCode);
     }
 
-    [PostgresFact]
-    public async Task Email_must_be_verified_before_it_can_reset_a_password()
+    [PostgresTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Email_reset_works_with_or_without_prior_email_verification(bool verifyEmail)
     {
         await using var factory = fixture.Factory();
         using var client = factory.CreateClient();
@@ -159,38 +163,70 @@ public sealed class PasswordResetTests(IdentityApiFixture fixture)
         var session = (await (await client.PostAsJsonAsync("/api/v1/auth/login",
             new { identifier = email, password = OldPassword, clientType = "mobile" }))
             .Content.ReadFromJsonAsync<SessionDto>())!;
-        var premature = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests",
-            new { channel = "email", identifier = email });
-        Assert.Equal(HttpStatusCode.Accepted, premature.StatusCode);
-        var fake = (await premature.Content.ReadFromJsonAsync<ChallengeDto>())!;
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
-            new { challengeId = fake.ChallengeId, code = "anything", newPassword = NewPassword })).StatusCode);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
-        var verifyResponse = await client.PostAsync("/api/v1/auth/email-verifications", null);
-        Assert.Equal(HttpStatusCode.Accepted, verifyResponse.StatusCode);
-        var verify = (await verifyResponse.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var before = await client.GetAsync("/api/v1/me/verification-status");
+        Assert.Equal(HttpStatusCode.OK, before.StatusCode);
+        Assert.Equal("no-store", before.Headers.CacheControl?.ToString());
+        Assert.Equal(new AccountVerificationStatusDto(true, false),
+            await before.Content.ReadFromJsonAsync<AccountVerificationStatusDto>());
         var emailSender = factory.Services.GetRequiredService<TestEmailCodeSender>();
+        if (verifyEmail)
+        {
+            var verifyResponse = await client.PostAsync("/api/v1/auth/email-verifications", null);
+            Assert.Equal(HttpStatusCode.Accepted, verifyResponse.StatusCode);
+            var verify = (await verifyResponse.Content.ReadFromJsonAsync<ChallengeDto>())!;
+            Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/email-verifications/confirm",
+                new { challengeId = verify.ChallengeId, code = emailSender.CodeFor(verify.ChallengeId) })).StatusCode);
+        }
+        Assert.Equal(new AccountVerificationStatusDto(true, verifyEmail),
+            await client.GetFromJsonAsync<AccountVerificationStatusDto>("/api/v1/me/verification-status"));
         client.DefaultRequestHeaders.Authorization = null;
-        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/email-verifications/confirm",
-            new { challengeId = verify.ChallengeId, code = emailSender.CodeFor(verify.ChallengeId) })).StatusCode);
         var resetResponse = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests",
-            new { channel = "email", identifier = email });
+            new { channel = "email", identifier = email.ToUpperInvariant() });
         Assert.Equal(HttpStatusCode.Accepted, resetResponse.StatusCode);
         var reset = (await resetResponse.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify",
+            new { challengeId = reset.ChallengeId, code = emailSender.CodeFor(reset.ChallengeId) })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
             new { challengeId = reset.ChallengeId, code = emailSender.CodeFor(reset.ChallengeId), newPassword = NewPassword })).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/v1/auth/login",
-            new { identifier = email, password = NewPassword, clientType = "mobile" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = email, password = OldPassword, clientType = "mobile" })).StatusCode);
+        var newSessionResponse = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = email, password = NewPassword, clientType = "mobile" });
+        Assert.Equal(HttpStatusCode.OK, newSessionResponse.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/me/verification-status")).StatusCode);
+        var newSession = (await newSessionResponse.Content.ReadFromJsonAsync<SessionDto>())!;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", newSession.AccessToken);
+        Assert.Equal(new AccountVerificationStatusDto(true, verifyEmail),
+            await client.GetFromJsonAsync<AccountVerificationStatusDto>("/api/v1/me/verification-status"));
     }
 
     [PostgresFact]
-    public async Task Reset_request_does_not_reveal_unknown_or_unverified_email()
+    public async Task Verification_status_requires_authentication()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/me/verification-status")).StatusCode);
+    }
+
+    [PostgresTheory]
+    [InlineData(AccountStatus.PendingPhoneVerification)]
+    [InlineData(AccountStatus.Blocked)]
+    [InlineData(AccountStatus.PendingDeletion)]
+    public async Task Reset_request_does_not_reveal_unknown_or_inactive_email(AccountStatus status)
     {
         await using var factory = fixture.Factory();
         using var client = factory.CreateClient();
         var phone = Phone();
         var email = $"unverified.{phone[3..]}@example.test";
-        await Register(client, phone, email, "caretaker");
+        var registration = await Register(client, phone, email, "caretaker");
+        await using (var context = fixture.Context())
+        {
+            var account = await context.Accounts.SingleAsync(row => row.Id == registration.UserId);
+            account.Status = status;
+            await context.SaveChangesAsync();
+        }
         var existing = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests",
             new { channel = "email", identifier = email });
         var unknown = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests",
@@ -258,21 +294,25 @@ public sealed class PasswordResetTests(IdentityApiFixture fixture)
         Assert.NotNull(storedChallenge.InvalidatedAt);
     }
 
-    [PostgresFact]
-    public async Task Five_wrong_password_reset_codes_lock_the_challenge()
+    [PostgresTheory]
+    [InlineData("sms")]
+    [InlineData("email")]
+    public async Task Five_wrong_password_reset_codes_lock_the_challenge(string channel)
     {
         await using var factory = fixture.Factory();
         using var client = factory.CreateClient();
         var phone = Phone();
-        var registration = await Register(client, phone, null, "senior");
+        var email = $"reset-lock.{phone[3..]}@example.test";
+        var registration = await Register(client, phone, email, "senior");
         var phoneCode = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(registration.PhoneChallenge.ChallengeId);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
             new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneCode })).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/v1/auth/login",
             new { identifier = phone, password = OldPassword, clientType = "mobile" })).StatusCode);
-        var response = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel = "sms", identifier = phone });
+        var response = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel, identifier = channel == "sms" ? phone : email });
         var challenge = (await response.Content.ReadFromJsonAsync<ChallengeDto>())!;
-        var code = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(challenge.ChallengeId);
+        var code = channel == "sms" ? factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(challenge.ChallengeId)
+            : factory.Services.GetRequiredService<TestEmailCodeSender>().CodeFor(challenge.ChallengeId);
         var wrong = code == "000000" ? "000001" : "000000";
         for (var attempt = 0; attempt < 5; attempt++)
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",

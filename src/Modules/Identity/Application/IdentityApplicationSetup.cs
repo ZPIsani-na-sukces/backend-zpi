@@ -12,6 +12,7 @@ using Zpi.Modules.Identity.Application.Authentication.Refresh;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Application.Sessions;
 using Zpi.Modules.Identity.Application.Accounts.UpdateProfile;
+using Zpi.Modules.Identity.Application.Accounts.VerificationStatus;
 
 namespace Zpi.Modules.Identity.Application;
 
@@ -33,6 +34,7 @@ public static class IdentityApplicationSetup
         services.AddScoped<VerifyPasswordResetCodeHandler>();
         services.AddScoped<ChangePasswordHandler>();
         services.AddScoped<CurrentAccountHandler>();
+        services.AddScoped<AccountVerificationStatusHandler>();
         services.AddScoped<UpdateProfileHandler>();
         services.AddScoped<DeleteAccountHandler>();
         services.AddScoped<SessionRevoker>();

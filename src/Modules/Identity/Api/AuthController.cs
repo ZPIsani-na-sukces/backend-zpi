@@ -7,6 +7,7 @@ using Zpi.Modules.Identity.Application.Accounts;
 using Zpi.Modules.Identity.Application.Accounts.ChangePassword;
 using Zpi.Modules.Identity.Application.Accounts.CurrentAccount;
 using Zpi.Modules.Identity.Application.Accounts.DeleteAccount;
+using Zpi.Modules.Identity.Application.Accounts.VerificationStatus;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Login;
 using Zpi.Modules.Identity.Application.Authentication.Logout;
@@ -275,6 +276,18 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
         Response.Headers.ETag = EntityTag.FromVersion(account.Version);
         Response.Headers.CacheControl = "no-store";
         return Ok(account);
+    }
+
+    [HttpGet("/api/v1/me/verification-status")]
+    [Authorize]
+    [ProducesResponseType<AccountVerificationStatusDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    public async Task<IActionResult> VerificationStatus([FromServices] AccountVerificationStatusHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var status = await handler.Handle(new AccountVerificationStatusQuery(AccountId()), cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        return Ok(status);
     }
 
     private bool HasAllowedOrigin()

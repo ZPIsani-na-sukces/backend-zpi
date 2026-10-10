@@ -19,7 +19,7 @@ public sealed class RequestPasswordResetHandler(IdentityDbContext context, Passw
             ? await context.Accounts.SingleOrDefaultAsync(row => row.NormalizedPhoneNumber == identifier, cancellationToken)
             : await context.Accounts.SingleOrDefaultAsync(row => row.NormalizedEmail == identifier.ToUpperInvariant(), cancellationToken);
         if (account is null || account.Status != AccountStatus.Active ||
-            (command.Channel == ChallengeChannel.Sms ? account.PhoneVerifiedAt is null : account.EmailVerifiedAt is null))
+            (command.Channel == ChallengeChannel.Sms && account.PhoneVerifiedAt is null))
             return AuthenticationResult<ChallengeDto>.Success(PublicResponse(command.Channel, now));
 
         var previous = await context.VerificationChallenges.Where(row => row.AccountId == account.Id &&

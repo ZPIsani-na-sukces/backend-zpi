@@ -21,7 +21,7 @@ public sealed class PasswordResetCodeVerifier(IdentityDbContext context, Passwor
         if (account is null || account.Status != AccountStatus.Active ||
             (challenge.Channel == ChallengeChannel.Sms
                 ? account.PhoneVerifiedAt is null || account.PhoneNumber != challenge.Destination
-                : account.EmailVerifiedAt is null || account.Email != challenge.Destination))
+                : account.Email != challenge.Destination))
             return null;
         if (passwords.VerifySecret(account, challenge.SecretHash, code) == PasswordVerificationResult.Failed)
         {
