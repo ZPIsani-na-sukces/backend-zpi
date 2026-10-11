@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Zpi.Modules.Identity.Application.Authentication.Register;
@@ -58,12 +59,15 @@ public sealed class PhoneVerificationTests(IdentityApiFixture fixture)
         var login = await client.PostAsJsonAsync("/api/v1/auth/login",
             new { identifier = phone, password = Password, clientType = "mobile" });
         Assert.Equal(HttpStatusCode.Forbidden, login.StatusCode);
-        using var loginBody = await System.Text.Json.JsonDocument.ParseAsync(await login.Content.ReadAsStreamAsync());
+        using var loginBody = await JsonDocument.ParseAsync(await login.Content.ReadAsStreamAsync());
         var ticket = loginBody.RootElement.GetProperty("verificationTicket").GetString()!;
         var request = new { verificationTicket = ticket };
-        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications", request)).StatusCode);
+        var cooldown = await client.PostAsJsonAsync("/api/v1/auth/phone-verifications", request);
+        Assert.Equal(HttpStatusCode.TooManyRequests, cooldown.StatusCode);
+        Assert.InRange(cooldown.Headers.RetryAfter!.Delta!.Value.TotalSeconds, 1, 60);
         await using (var context = fixture.Context())
         {
+            Assert.Equal(1, await context.VerificationChallenges.CountAsync(row => row.AccountId == registration.UserId));
             var challenge = await context.VerificationChallenges.SingleAsync(row => row.Id == registration.PhoneChallenge.ChallengeId);
             challenge.ResendAfter = DateTimeOffset.UtcNow.AddSeconds(-1);
             await context.SaveChangesAsync();
@@ -76,6 +80,70 @@ public sealed class PhoneVerificationTests(IdentityApiFixture fixture)
             new { challengeId = registration.PhoneChallenge.ChallengeId, code = oldCode })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
             new { challengeId = next.ChallengeId, code = sender.CodeFor(next.ChallengeId) })).StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Login_returns_active_registration_challenge_without_sending_new_code()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var registrationResponse = await client.PostAsJsonAsync("/api/v1/auth/registrations",
+            new { role = "senior", firstName = "Jan", lastName = "Kowalski", phoneNumber = phone, email = (string?)null, password = Password });
+        var registration = (await registrationResponse.Content.ReadFromJsonAsync<RegistrationDto>())!;
+        var login = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = phone, password = Password, clientType = "mobile" });
+        Assert.Equal(HttpStatusCode.Forbidden, login.StatusCode);
+        using var body = await JsonDocument.ParseAsync(await login.Content.ReadAsStreamAsync());
+        var challenge = body.RootElement.GetProperty("phoneChallenge").Deserialize<ChallengeDto>(JsonSerializerOptions.Web)!;
+        Assert.Equal(registration.PhoneChallenge, challenge);
+        await using (var context = fixture.Context())
+            Assert.Equal(1, await context.VerificationChallenges.CountAsync(row => row.AccountId == registration.UserId));
+
+        var code = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(challenge.ChallengeId);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = challenge.ChallengeId, code })).StatusCode);
+    }
+
+    [PostgresTheory]
+    [InlineData("expired")]
+    [InlineData("locked")]
+    [InlineData("ticketExpired")]
+    public async Task Login_omits_challenge_that_can_no_longer_be_confirmed(string state)
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var registrationResponse = await client.PostAsJsonAsync("/api/v1/auth/registrations",
+            new { role = "senior", firstName = "Jan", lastName = "Kowalski", phoneNumber = phone, email = (string?)null, password = Password });
+        var registration = (await registrationResponse.Content.ReadFromJsonAsync<RegistrationDto>())!;
+        await using (var context = fixture.Context())
+        {
+            var challenge = await context.VerificationChallenges.SingleAsync(row => row.Id == registration.PhoneChallenge.ChallengeId);
+            var ticket = await context.VerificationTickets.SingleAsync(row => row.Id == challenge.TicketId);
+            switch (state)
+            {
+                case "expired":
+                    challenge.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-6);
+                    challenge.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+                    break;
+                case "locked":
+                    challenge.Attempts = 5;
+                    challenge.InvalidatedAt = DateTimeOffset.UtcNow;
+                    break;
+                case "ticketExpired":
+                    ticket.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-31);
+                    ticket.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+                    break;
+            }
+            await context.SaveChangesAsync();
+        }
+        var login = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = phone, password = Password, clientType = "mobile" });
+        Assert.Equal(HttpStatusCode.Forbidden, login.StatusCode);
+        using var body = await JsonDocument.ParseAsync(await login.Content.ReadAsStreamAsync());
+        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("verificationTicket").GetString()));
+        Assert.False(body.RootElement.TryGetProperty("phoneChallenge", out _));
     }
 
     [PostgresFact]

@@ -25,7 +25,7 @@ public sealed class StartPhoneVerificationHandler(IdentityDbContext context, Pas
                 row.Purpose == ChallengePurpose.PhoneVerification)
             .OrderByDescending(row => row.CreatedAt).ToListAsync(cancellationToken);
         if (previous.Count > 0 && previous[0].ResendAfter > now)
-            return AuthenticationResult<ChallengeDto>.Failed(AuthenticationFailure.InvalidState);
+            return AuthenticationResult<ChallengeDto>.CoolingDown(previous[0].ResendAfter - now);
         foreach (var challenge in previous.Where(row => row.ConsumedAt is null && row.InvalidatedAt is null))
             challenge.InvalidatedAt = now;
         var (next, code) = VerificationChallengeFactory.Create(account, ChallengePurpose.PhoneVerification,

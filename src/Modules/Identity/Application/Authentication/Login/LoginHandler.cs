@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Application.Sessions;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
@@ -24,10 +25,13 @@ public sealed class LoginHandler(IdentityDbContext context, PasswordHashing pass
         var now = clock.GetUtcNow();
         if (account.Status != AccountStatus.Active || account.PhoneVerifiedAt is null)
         {
+            var challenge = account.Status == AccountStatus.PendingPhoneVerification
+                ? await ActiveChallenge(account.Id, now, cancellationToken)
+                : null;
             var (ticket, secret) = VerificationTickets.Create(context, account.Id, now);
             await context.SaveChangesAsync(cancellationToken);
             return AuthenticationResult<SessionDto>.Failed(AuthenticationFailure.PhoneVerificationRequired,
-                new PhoneVerificationDto(secret, ticket.ExpiresAt));
+                new PhoneVerificationDto(secret, ticket.ExpiresAt, challenge));
         }
         if (verification == PasswordVerificationResult.SuccessRehashNeeded)
             account.PasswordHash = passwords.Hash(account, request.Password);
@@ -49,4 +53,15 @@ public sealed class LoginHandler(IdentityDbContext context, PasswordHashing pass
         return AuthenticationResult<SessionDto>.Success(new SessionDto(access, expires, refresh, session.ExpiresAt,
             AccountDtoMapper.Map(account, role.Code)));
     }
+
+    private Task<ChallengeDto?> ActiveChallenge(Guid accountId, DateTimeOffset now, CancellationToken cancellationToken) =>
+        context.VerificationChallenges
+            .Where(row => row.AccountId == accountId && row.Purpose == ChallengePurpose.PhoneVerification &&
+                row.Channel == ChallengeChannel.Sms && row.ConsumedAt == null && row.InvalidatedAt == null &&
+                row.ExpiresAt > now && row.Attempts < 5 &&
+                context.VerificationTickets.Any(ticket => ticket.Id == row.TicketId && ticket.AccountId == accountId &&
+                    ticket.ConsumedAt == null && ticket.ExpiresAt > now))
+            .OrderByDescending(row => row.CreatedAt)
+            .Select(row => new ChallengeDto(row.Id, "sms", row.ExpiresAt, row.ResendAfter))
+            .FirstOrDefaultAsync(cancellationToken);
 }
