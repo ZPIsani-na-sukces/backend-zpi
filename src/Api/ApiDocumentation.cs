@@ -67,12 +67,17 @@ public static class ApiDocumentation
                         parameter.Schema = new OpenApiSchema { Type = JsonSchemaType.String, Pattern = "^\"[0-9]+\"$" };
                     }
                 }
-                if (context.Description.SupportedResponseTypes.Any(response => response.StatusCode == 200 &&
-                    response.Type?.GetProperty("Version") is not null) &&
-                    operation.Responses.TryGetValue("200", out var success) && success is OpenApiResponse response)
+                foreach (var responseType in context.Description.SupportedResponseTypes.Where(response =>
+                    response.StatusCode is 200 or 201 && response.Type?.GetProperty("Version") is not null))
                 {
-                    response.Headers ??= new Dictionary<string, IOpenApiHeader>();
-                    response.Headers["ETag"] = new OpenApiHeader { Schema = new OpenApiSchema { Type = JsonSchemaType.String } };
+                    var status = responseType.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    if (operation.Responses.TryGetValue(status, out var success) && success is OpenApiResponse response)
+                    {
+                        response.Headers ??= new Dictionary<string, IOpenApiHeader>();
+                        response.Headers["ETag"] = new OpenApiHeader { Schema = new OpenApiSchema { Type = JsonSchemaType.String } };
+                        if (responseType.StatusCode == 201)
+                            response.Headers["Location"] = new OpenApiHeader { Schema = new OpenApiSchema { Type = JsonSchemaType.String } };
+                    }
                 }
                 if (context.Description.RelativePath is "api/v1/auth/login" or "api/v1/auth/refresh")
                 {

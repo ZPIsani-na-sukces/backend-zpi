@@ -9,34 +9,53 @@ namespace Zpi.Modules.Identity.Infrastructure;
 
 internal sealed class IdentityFacade(IdentityDbContext context) : IIdentityFacade
 {
+    public async Task<IReadOnlyDictionary<Guid, AccountSummary>> GetAccountSummariesAsync(IReadOnlyCollection<Guid> accountIds,
+        CancellationToken cancellationToken)
+    {
+        var accounts = await context.Accounts
+            .AsNoTracking()
+            .Where(user => accountIds.Contains(user.Id))
+            .Join(context.Roles, user => user.RoleId, role => role.Id,
+                (user, role) => new { user.Id, user.FirstName, user.LastName, role.Code })
+            .ToListAsync(cancellationToken);
+        return accounts.ToDictionary(account => account.Id,
+            account => new AccountSummary(account.Id, account.FirstName, account.LastName, account.Code.ToCamelCase()));
+    }
+
     public async Task<AccountSummary?> FindActiveSeniorAsync(string identifier, CancellationToken cancellationToken)
     {
         var normalized = identifier.Trim();
         var email = normalized.ToUpperInvariant();
-        var account = await (from user in context.Accounts.AsNoTracking()
-            join role in context.Roles on user.RoleId equals role.Id
-            where user.Status == AccountStatus.Active && user.PhoneVerifiedAt != null && role.Code == AccountRole.Senior &&
-                (user.NormalizedPhoneNumber == normalized || user.NormalizedEmail == email)
-            select new { user.Id, user.FirstName, user.LastName, role.Code }).SingleOrDefaultAsync(cancellationToken);
+        var account = await context.Accounts
+            .AsNoTracking()
+            .Where(user => user.Status == AccountStatus.Active && user.PhoneVerifiedAt != null &&
+                (user.NormalizedPhoneNumber == normalized || user.NormalizedEmail == email))
+            .Join(context.Roles.Where(role => role.Code == AccountRole.Senior), user => user.RoleId, role => role.Id,
+                (user, role) => new { user.Id, user.FirstName, user.LastName, role.Code })
+            .SingleOrDefaultAsync(cancellationToken);
         return account is null ? null : new AccountSummary(account.Id, account.FirstName, account.LastName, account.Code.ToCamelCase());
     }
 
     public async Task<IReadOnlyDictionary<Guid, AccountSummary>> GetActiveAccountsAsync(IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken)
     {
-        var accounts = await (from user in context.Accounts.AsNoTracking()
-            join role in context.Roles on user.RoleId equals role.Id
-            where accountIds.Contains(user.Id) && user.Status == AccountStatus.Active && user.PhoneVerifiedAt != null
-            select new { user.Id, user.FirstName, user.LastName, role.Code }).ToListAsync(cancellationToken);
+        var accounts = await context.Accounts
+            .AsNoTracking()
+            .Where(user => accountIds.Contains(user.Id) && user.Status == AccountStatus.Active && user.PhoneVerifiedAt != null)
+            .Join(context.Roles, user => user.RoleId, role => role.Id,
+                (user, role) => new { user.Id, user.FirstName, user.LastName, role.Code })
+            .ToListAsync(cancellationToken);
         return accounts.ToDictionary(account => account.Id,
             account => new AccountSummary(account.Id, account.FirstName, account.LastName, account.Code.ToCamelCase()));
     }
+
     public async Task<PageDto<AccountSummary>> GetActiveAccountPageAsync(IReadOnlyCollection<Guid> accountIds,
         string? search, int page, int limit, CancellationToken cancellationToken)
     {
-        var rows = from user in context.Accounts.AsNoTracking()
-            join role in context.Roles on user.RoleId equals role.Id
-            where accountIds.Contains(user.Id) && user.Status == AccountStatus.Active && user.PhoneVerifiedAt != null
-            select new { user.Id, user.FirstName, user.LastName, role.Code };
+        var rows = context.Accounts
+            .AsNoTracking()
+            .Where(user => accountIds.Contains(user.Id) && user.Status == AccountStatus.Active && user.PhoneVerifiedAt != null)
+            .Join(context.Roles, user => user.RoleId, role => role.Id,
+                (user, role) => new { user.Id, user.FirstName, user.LastName, role.Code });
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToUpperInvariant();
