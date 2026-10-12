@@ -8,6 +8,7 @@ public sealed class SeniorProfileDbContext(DbContextOptions<SeniorProfileDbConte
 {
     public const string Schema = "profile";
     public DbSet<SeniorContactPerson> SeniorContactPersons => Set<SeniorContactPerson>();
+    public DbSet<ContactSettings> ContactSettings => Set<ContactSettings>();
     public DbSet<AccessibilityPreference> AccessibilityPreferences => Set<AccessibilityPreference>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 

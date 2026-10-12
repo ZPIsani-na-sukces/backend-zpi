@@ -47,7 +47,6 @@ public sealed class ContactsController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "caretaker")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<ContactDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -63,7 +62,6 @@ public sealed class ContactsController : ControllerBase
     }
 
     [HttpPut("{contactId}")]
-    [Authorize(Roles = "caretaker")]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<ContactDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -84,7 +82,6 @@ public sealed class ContactsController : ControllerBase
     }
 
     [HttpDelete("{contactId}")]
-    [Authorize(Roles = "caretaker")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
@@ -113,6 +110,7 @@ public sealed class ContactsController : ControllerBase
     {
         SeniorProfileFailure.ResourceNotFound => ProblemResponse(404, "resourceNotFound", "The resource was not found."),
         SeniorProfileFailure.VersionMismatch => ProblemResponse(412, "versionMismatch", "The resource has changed. Reload it before retrying."),
+        SeniorProfileFailure.SeniorEditingLocked => ProblemResponse(403, "seniorEditingLocked", "A caretaker has locked contact editing for this senior."),
         _ => throw new ArgumentOutOfRangeException(nameof(failure))
     };
 

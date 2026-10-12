@@ -1,16 +1,15 @@
-using Zpi.Modules.Care.Contracts;
 using Zpi.Modules.SeniorProfile.Domain;
 using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 namespace Zpi.Modules.SeniorProfile.Application.Contacts.Create;
 
-public sealed class CreateContactHandler(SeniorProfileDbContext context, ICareFacade care,
+public sealed class CreateContactHandler(SeniorProfileDbContext context, ContactWriteAccess access,
     ContactDtoMapper mapper, TimeProvider clock)
 {
     public async Task<SeniorProfileResult<ContactDto>> Handle(CreateContactCommand command, CancellationToken cancellationToken)
     {
-        if (!await care.HasActiveRelationshipAsync(command.AccountId, command.SeniorId, cancellationToken))
-            return SeniorProfileResult<ContactDto>.Failed(SeniorProfileFailure.ResourceNotFound);
+        if (await access.CheckAsync(command.AccountId, command.SeniorId, cancellationToken) is { } failure)
+            return SeniorProfileResult<ContactDto>.Failed(failure);
         var now = clock.GetUtcNow();
         var contact = new SeniorContactPerson
         {

@@ -1,15 +1,14 @@
 using Microsoft.EntityFrameworkCore;
-using Zpi.Modules.Care.Contracts;
 using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 namespace Zpi.Modules.SeniorProfile.Application.Contacts.Delete;
 
-public sealed class DeleteContactHandler(SeniorProfileDbContext context, ICareFacade care, TimeProvider clock)
+public sealed class DeleteContactHandler(SeniorProfileDbContext context, ContactWriteAccess access, TimeProvider clock)
 {
     public async Task<SeniorProfileResult<bool>> Handle(DeleteContactCommand command, CancellationToken cancellationToken)
     {
-        if (!await care.HasActiveRelationshipAsync(command.AccountId, command.SeniorId, cancellationToken))
-            return SeniorProfileResult<bool>.Failed(SeniorProfileFailure.ResourceNotFound);
+        if (await access.CheckAsync(command.AccountId, command.SeniorId, cancellationToken) is { } failure)
+            return SeniorProfileResult<bool>.Failed(failure);
         var contact = await context.SeniorContactPersons.SingleOrDefaultAsync(row => row.Id == command.ContactId &&
             row.SeniorId == command.SeniorId && row.DeletedAt == null, cancellationToken);
         if (contact is null) return SeniorProfileResult<bool>.Failed(SeniorProfileFailure.ResourceNotFound);

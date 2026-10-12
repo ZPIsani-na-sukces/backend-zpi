@@ -9,6 +9,7 @@ internal sealed class AccountDataCleanup(SeniorProfileDbContext context) : IAcco
     {
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         await context.SeniorContactPersons.Where(row => row.SeniorId == accountId).ExecuteDeleteAsync(cancellationToken);
+        await context.ContactSettings.Where(row => row.SeniorId == accountId).ExecuteDeleteAsync(cancellationToken);
         await context.AccessibilityPreferences.Where(row => row.SeniorId == accountId).ExecuteDeleteAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }

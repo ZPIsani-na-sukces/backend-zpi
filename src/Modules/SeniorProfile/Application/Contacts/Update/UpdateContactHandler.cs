@@ -1,16 +1,15 @@
 using Microsoft.EntityFrameworkCore;
-using Zpi.Modules.Care.Contracts;
 using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
 namespace Zpi.Modules.SeniorProfile.Application.Contacts.Update;
 
-public sealed class UpdateContactHandler(SeniorProfileDbContext context, ICareFacade care,
+public sealed class UpdateContactHandler(SeniorProfileDbContext context, ContactWriteAccess access,
     ContactDtoMapper mapper, TimeProvider clock)
 {
     public async Task<SeniorProfileResult<ContactDto>> Handle(UpdateContactCommand command, CancellationToken cancellationToken)
     {
-        if (!await care.HasActiveRelationshipAsync(command.AccountId, command.SeniorId, cancellationToken))
-            return SeniorProfileResult<ContactDto>.Failed(SeniorProfileFailure.ResourceNotFound);
+        if (await access.CheckAsync(command.AccountId, command.SeniorId, cancellationToken) is { } failure)
+            return SeniorProfileResult<ContactDto>.Failed(failure);
         var contact = await context.SeniorContactPersons.SingleOrDefaultAsync(row => row.Id == command.ContactId &&
             row.SeniorId == command.SeniorId && row.DeletedAt == null, cancellationToken);
         if (contact is null) return SeniorProfileResult<ContactDto>.Failed(SeniorProfileFailure.ResourceNotFound);

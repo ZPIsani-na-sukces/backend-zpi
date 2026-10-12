@@ -13,6 +13,7 @@ using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.SeniorProfile.Application.Contacts;
+using Zpi.Modules.SeniorProfile.Application.Contacts.Settings;
 using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 using Zpi.Shared.Pagination;
 
@@ -118,7 +119,7 @@ public sealed class ContactTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
-    public async Task Other_users_cannot_access_contacts_and_seniors_cannot_modify_them()
+    public async Task Other_users_cannot_access_contacts()
     {
         await using var factory = fixture.Factory();
         using var senior = await Actor(factory, AccountRole.Senior);
@@ -138,15 +139,75 @@ public sealed class ContactTests(IdentityApiFixture fixture)
         await Error(await outsider.Client.PostAsJsonAsync(path, Body("Other")), 404, "resourceNotFound");
         await Error(await Send(outsider.Client, HttpMethod.Put, item, Body("Other"), "\"1\""), 404, "resourceNotFound");
         await Error(await Send(outsider.Client, HttpMethod.Delete, item, etag: "\"1\""), 404, "resourceNotFound");
-        await Error(await senior.Client.PostAsJsonAsync(path, Body("Own")), 403, "operationForbidden");
-        await Error(await Send(senior.Client, HttpMethod.Put, item, Body("Own"), "\"1\""), 403, "operationForbidden");
-        await Error(await Send(senior.Client, HttpMethod.Delete, item, etag: "\"1\""), 403, "operationForbidden");
         var wrongParent = Contacts(otherSenior.Id) + "/" + contact.ContactId;
         await Error(await caretaker.Client.GetAsync(wrongParent), 404, "resourceNotFound");
         await Error(await Send(caretaker.Client, HttpMethod.Put, wrongParent, Body("Other"), "\"1\""), 404, "resourceNotFound");
         await Error(await Send(caretaker.Client, HttpMethod.Delete, wrongParent, etag: "\"1\""), 404, "resourceNotFound");
         await Error(await caretaker.Client.PostAsJsonAsync(Contacts(caretaker.Id), Body("Not senior")), 404, "resourceNotFound");
         Assert.Equal(contact, await senior.Client.GetFromJsonAsync<ContactDto>(item));
+    }
+
+    [PostgresFact]
+    public async Task Senior_can_edit_contacts_until_a_caretaker_locks_them_and_any_caretaker_can_unlock()
+    {
+        await using var factory = fixture.Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var firstCaretaker = await Actor(factory, AccountRole.Caretaker);
+        using var secondCaretaker = await Actor(factory, AccountRole.Caretaker);
+        using var outsider = await Actor(factory, AccountRole.Caretaker);
+        var created = await Create(senior, senior.Id, "Anna");
+        await Link(senior, firstCaretaker);
+        await Link(senior, secondCaretaker);
+        var contacts = Contacts(senior.Id);
+        var settingsPath = contacts + "/settings";
+        var initialResponse = await senior.Client.GetAsync(settingsPath);
+        Assert.Equal(HttpStatusCode.OK, initialResponse.StatusCode);
+        Assert.Equal("\"1\"", initialResponse.Headers.ETag!.Tag);
+        var initial = (await initialResponse.Content.ReadFromJsonAsync<ContactSettingsDto>())!;
+        Assert.False(initial.SeniorEditingLocked);
+        await Error(await outsider.Client.GetAsync(settingsPath), 404, "resourceNotFound");
+        await Error(await Send(outsider.Client, HttpMethod.Put, settingsPath,
+            new SaveContactSettingsRequest(true), "\"1\""), 404, "resourceNotFound");
+        await Error(await Send(senior.Client, HttpMethod.Put, settingsPath,
+            new SaveContactSettingsRequest(true), "\"1\""), 403, "operationForbidden");
+
+        var item = contacts + "/" + created.ContactId;
+        Assert.Equal(senior.Id, created.CreatedBy!.UserId);
+        await Error(await Send(firstCaretaker.Client, HttpMethod.Put, settingsPath,
+            new SaveContactSettingsRequest(true)), 428, "preconditionRequired");
+        var lockedResponse = await Send(firstCaretaker.Client, HttpMethod.Put, settingsPath,
+            new SaveContactSettingsRequest(true), "\"1\"");
+        Assert.Equal(HttpStatusCode.OK, lockedResponse.StatusCode);
+        Assert.Equal("\"2\"", lockedResponse.Headers.ETag!.Tag);
+        Assert.True((await senior.Client.GetFromJsonAsync<ContactSettingsDto>(settingsPath))!.SeniorEditingLocked);
+        await Error(await Send(secondCaretaker.Client, HttpMethod.Put, settingsPath,
+            new SaveContactSettingsRequest(false), "\"1\""), 412, "versionMismatch");
+
+        await Error(await senior.Client.PostAsJsonAsync(contacts, Body("Blocked")), 403, "seniorEditingLocked");
+        await Error(await Send(senior.Client, HttpMethod.Put, item, Body("Blocked"), "\"1\""), 403, "seniorEditingLocked");
+        await Error(await Send(senior.Client, HttpMethod.Delete, item, etag: "\"1\""), 403, "seniorEditingLocked");
+        Assert.Equal(created, await senior.Client.GetFromJsonAsync<ContactDto>(item));
+
+        var caretakerContact = await Create(secondCaretaker, senior.Id, "Caretaker contact");
+        var edited = await Send(secondCaretaker.Client, HttpMethod.Put, item, Body("Edited by caretaker"), "\"1\"");
+        Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await Send(secondCaretaker.Client, HttpMethod.Delete, item, etag: "\"2\"")).StatusCode);
+        var unlockedResponse = await Send(secondCaretaker.Client, HttpMethod.Put, settingsPath,
+            new SaveContactSettingsRequest(false), "\"2\"");
+        Assert.Equal(HttpStatusCode.OK, unlockedResponse.StatusCode);
+        Assert.Equal("\"3\"", unlockedResponse.Headers.ETag!.Tag);
+
+        var seniorEdited = await Send(senior.Client, HttpMethod.Put, contacts + "/" + caretakerContact.ContactId,
+            Body("Edited by senior"), "\"1\"");
+        Assert.Equal(HttpStatusCode.OK, seniorEdited.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(senior.Client, HttpMethod.Delete,
+            contacts + "/" + caretakerContact.ContactId, etag: "\"2\"")).StatusCode);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<SeniorProfileDbContext>();
+        foreach (var cleanup in scope.ServiceProvider.GetServices<IAccountDataCleanup>())
+            await cleanup.DeleteAsync(senior.Id, CancellationToken.None);
+        Assert.False(await context.ContactSettings.AnyAsync(row => row.SeniorId == senior.Id));
     }
 
     [PostgresFact]
