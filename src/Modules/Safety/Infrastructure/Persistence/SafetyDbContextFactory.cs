@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Zpi.Database;
 
-namespace Zpi.Modules.Safety.Persistence;
+namespace Zpi.Modules.Safety.Infrastructure.Persistence;
 
 public sealed class SafetyDbContextFactory : IDesignTimeDbContextFactory<SafetyDbContext>
 {

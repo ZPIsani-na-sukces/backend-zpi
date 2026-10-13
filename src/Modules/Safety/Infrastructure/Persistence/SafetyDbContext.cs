@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Safety.Domain;
 using Zpi.Database.Outbox;
 
-namespace Zpi.Modules.Safety.Persistence;
+namespace Zpi.Modules.Safety.Infrastructure.Persistence;
 
 public sealed class SafetyDbContext(DbContextOptions<SafetyDbContext> options) : DbContext(options)
 {

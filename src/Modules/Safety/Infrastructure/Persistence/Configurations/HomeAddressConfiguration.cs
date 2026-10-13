@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zpi.Modules.Safety.Domain;
 using Zpi.Database;
 
-namespace Zpi.Modules.Safety.Persistence.Configurations;
+namespace Zpi.Modules.Safety.Infrastructure.Persistence.Configurations;
 
 internal sealed class HomeAddressConfiguration : IEntityTypeConfiguration<HomeAddress>
 {

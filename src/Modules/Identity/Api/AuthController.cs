@@ -240,11 +240,9 @@ public sealed class AuthController(IOptions<AuthenticationOptions> settings) : C
     private IActionResult SessionResponse(SessionDto session, ClientType clientType)
     {
         var web = clientType == ClientType.Web;
-        if (web)
-        {
-            Response.Cookies.Append("zpi_refresh_token", session.RefreshToken!, Cookie(session.RefreshTokenExpiresAt));
-            session = session with { RefreshToken = null };
-        }
+        if (!web) return Ok(session);
+        Response.Cookies.Append("zpi_refresh_token", session.RefreshToken!, Cookie(session.RefreshTokenExpiresAt));
+        session = session with { RefreshToken = null };
         return Ok(session);
     }
 
