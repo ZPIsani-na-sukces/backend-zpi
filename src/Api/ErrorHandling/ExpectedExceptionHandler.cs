@@ -10,6 +10,9 @@ internal sealed class ExpectedExceptionHandler(IProblemDetailsService problemDet
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
+        if (exception.GetBaseException() is PostgresException
+            { SqlState: PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected } conflict)
+            exception = conflict;
         ProblemDetails problem;
         switch (exception)
         {
@@ -40,6 +43,14 @@ internal sealed class ExpectedExceptionHandler(IProblemDetailsService problemDet
                 {
                     Status = StatusCodes.Status409Conflict,
                     Detail = "The operation conflicts with an existing resource.",
+                    Extensions = { ["code"] = "invalidState" }
+                };
+                break;
+            case PostgresException { SqlState: PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected }:
+                problem = new ProblemDetails
+                {
+                    Status = StatusCodes.Status409Conflict,
+                    Detail = "A concurrent operation changed the data. Retry the request.",
                     Extensions = { ["code"] = "invalidState" }
                 };
                 break;

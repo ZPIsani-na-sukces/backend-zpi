@@ -133,6 +133,8 @@ public sealed class ApiErrorHandlingTests
     [InlineData("not-found", 404, "resourceNotFound")]
     [InlineData("duplicate", 409, "invalidState")]
     [InlineData("database-error", 500, "internalServerError")]
+    [InlineData("serialization", 409, "invalidState")]
+    [InlineData("deadlock", 409, "invalidState")]
     public async Task Errors_from_handlers_and_mvc_use_the_shared_contract(string path, int status, string code)
     {
         await using var app = await CreateApp();
@@ -276,6 +278,14 @@ public sealed class ProbeController : ControllerBase
     [HttpGet("database-error")]
     public IActionResult ThrowDatabaseError() => throw new DbUpdateException("sensitive-database-marker",
         new PostgresException("sensitive-database-marker", "ERROR", "ERROR", PostgresErrorCodes.CheckViolation));
+
+    [HttpGet("serialization")]
+    public IActionResult ThrowSerialization() => throw new InvalidOperationException("sensitive-database-marker",
+        new DbUpdateException("sensitive-database-marker",
+            new PostgresException("sensitive-database-marker", "ERROR", "ERROR", PostgresErrorCodes.SerializationFailure)));
+
+    [HttpGet("deadlock")]
+    public IActionResult ThrowDeadlock() => throw new PostgresException("sensitive-database-marker", "ERROR", "ERROR", PostgresErrorCodes.DeadlockDetected);
 
     [HttpGet("concurrency")]
     public IActionResult ThrowConcurrency() => throw new DbUpdateConcurrencyException("sensitive-concurrency-marker");

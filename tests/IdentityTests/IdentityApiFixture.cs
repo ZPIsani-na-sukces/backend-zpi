@@ -14,7 +14,7 @@ using Zpi.Modules.Identity.Infrastructure.Persistence;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.MedicalRecords.Persistence;
 using Zpi.Modules.Notifications.Persistence;
-using Zpi.Modules.Routines.Persistence;
+using Zpi.Modules.Routines.Infrastructure.Persistence;
 using Zpi.Modules.Safety.Infrastructure.Persistence;
 using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 
@@ -109,6 +109,7 @@ public sealed class IdentityApiFixture : IAsyncLifetime
                 ["ConnectionStrings:Redis"] = redisConnectionString,
                 ["Redis:KeyPrefix"] = redisPrefix,
                 ["AccountDeletion:Enabled"] = "false",
+                ["Routines:WorkerEnabled"] = "false",
                 ["Authentication:SigningKey"] = new string('k', 64)
             }));
             return base.CreateHost(builder);
@@ -130,6 +131,7 @@ public sealed class IdentityApiFixture : IAsyncLifetime
                 ["ConnectionStrings:Redis"] = redisConnectionString,
                 ["Redis:KeyPrefix"] = redisPrefix,
                 ["AccountDeletion:Enabled"] = "false",
+                ["Routines:WorkerEnabled"] = "false",
                 ["Authentication:SigningKey"] = new string('k', 64)
             }));
         }

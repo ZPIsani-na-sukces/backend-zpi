@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Routines.Domain;
 using Zpi.Database.Outbox;
 
-namespace Zpi.Modules.Routines.Persistence;
+namespace Zpi.Modules.Routines.Infrastructure.Persistence;
 
 public sealed class RoutinesDbContext(DbContextOptions<RoutinesDbContext> options) : DbContext(options)
 {

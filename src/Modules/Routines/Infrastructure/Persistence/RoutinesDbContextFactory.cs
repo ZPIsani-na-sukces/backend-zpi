@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Zpi.Database;
 
-namespace Zpi.Modules.Routines.Persistence;
+namespace Zpi.Modules.Routines.Infrastructure.Persistence;
 
 public sealed class RoutinesDbContextFactory : IDesignTimeDbContextFactory<RoutinesDbContext>
 {

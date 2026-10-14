@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zpi.Modules.Routines.Domain;
 using Zpi.Database;
 
-namespace Zpi.Modules.Routines.Persistence.Configurations;
+namespace Zpi.Modules.Routines.Infrastructure.Persistence.Configurations;
 
 internal sealed class RoutineTaskConfiguration : IEntityTypeConfiguration<RoutineTask>
 {
