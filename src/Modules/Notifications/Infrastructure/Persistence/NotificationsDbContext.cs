@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Database.Outbox;
 
-namespace Zpi.Modules.Notifications.Persistence;
+namespace Zpi.Modules.Notifications.Infrastructure.Persistence;
 
 public sealed class NotificationsDbContext(DbContextOptions<NotificationsDbContext> options) : DbContext(options)
 {

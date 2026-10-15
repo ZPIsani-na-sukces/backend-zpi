@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Database;
 
-namespace Zpi.Modules.Notifications.Persistence.Configurations;
+namespace Zpi.Modules.Notifications.Infrastructure.Persistence.Configurations;
 
 internal sealed class NotificationDeliveryConfiguration : IEntityTypeConfiguration<NotificationDelivery>
 {

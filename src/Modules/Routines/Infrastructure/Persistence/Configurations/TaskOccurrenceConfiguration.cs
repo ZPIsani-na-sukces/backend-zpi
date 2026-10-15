@@ -31,11 +31,14 @@ internal sealed class TaskOccurrenceConfiguration : IEntityTypeConfiguration<Tas
         builder.Property(x => x.Title).HasColumnName("title").IsRequired();
         builder.Property(x => x.Instructions).HasColumnName("instructions").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").HasConversion(new CamelCaseEnumConverter<OccurrenceStatus>()).HasMaxLength(40);
+        builder.Property(x => x.BeforeReminderQueuedAt).HasColumnName("before_reminder_queued_at");
+        builder.Property(x => x.DueReminderQueuedAt).HasColumnName("due_reminder_queued_at");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         builder.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken();
         builder.HasIndex(x => new { x.RoutineTaskId, x.ScheduleRevision, x.LocalDate, x.LocalTime }).IsUnique();
         builder.HasIndex(x => new { x.RoutineTaskId, x.ScheduleRevision, x.ScheduledAt }).IsUnique();
         builder.HasIndex(x => new { x.SeniorId, x.ScheduledAt });
+        builder.HasIndex(x => x.ScheduledAt).HasFilter("status = 'pending'");
         builder.Property(x => x.TimeZone).HasMaxLength(100);
         builder.Property(x => x.Title).HasMaxLength(150);
         builder.Property(x => x.Instructions).HasMaxLength(2000);

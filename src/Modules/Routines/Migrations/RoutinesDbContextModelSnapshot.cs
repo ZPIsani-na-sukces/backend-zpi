@@ -259,6 +259,14 @@ namespace Zpi.Modules.Routines.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset?>("BeforeReminderQueuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("before_reminder_queued_at");
+
+                    b.Property<DateTimeOffset?>("DueReminderQueuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_reminder_queued_at");
+
                     b.Property<string>("Instructions")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -323,6 +331,9 @@ namespace Zpi.Modules.Routines.Migrations
                         .HasColumnName("version");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ScheduledAt")
+                        .HasFilter("status = 'pending'");
 
                     b.HasIndex("SeniorId", "ScheduledAt");
 

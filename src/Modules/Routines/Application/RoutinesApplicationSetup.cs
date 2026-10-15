@@ -1,4 +1,6 @@
 using FluentValidation;
+using Zpi.Modules.Notifications.Contracts;
+using Zpi.Modules.Routines.Application.Reminders;
 using Microsoft.Extensions.DependencyInjection;
 using Zpi.Modules.Routines.Application.Occurrences;
 using Zpi.Modules.Routines.Application.Occurrences.Decision;
@@ -18,6 +20,7 @@ public static class RoutinesApplicationSetup
 {
     public static IServiceCollection AddRoutinesApplication(this IServiceCollection services)
     {
+        services.AddScoped<INotificationEventSource, RoutineReminderSource>();
         services.AddScoped<RoutineTaskMapper>();
         services.AddScoped<TaskOccurrenceMapper>();
         services.AddScoped<OccurrenceGenerator>();

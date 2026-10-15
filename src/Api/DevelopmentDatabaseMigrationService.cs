@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Care.Infrastructure.Persistence;
 using Zpi.Modules.Identity.Infrastructure.Persistence;
 using Zpi.Modules.MedicalRecords.Persistence;
-using Zpi.Modules.Notifications.Persistence;
+using Zpi.Modules.Notifications.Infrastructure.Persistence;
 using Zpi.Modules.Routines.Infrastructure.Persistence;
 using Zpi.Modules.Safety.Infrastructure.Persistence;
 using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;

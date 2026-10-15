@@ -5,6 +5,8 @@ namespace Zpi.Modules.Notifications.Domain;
 public sealed class Notification : VersionedEntity
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
+    public string Source { get; set; } = "legacy";
+    public DateTimeOffset? ExpiresAt { get; set; }
     public Guid IntegrationEventId { get; set; }
     public Guid RecipientAccountId { get; set; }
     public Guid? SeniorId { get; set; }

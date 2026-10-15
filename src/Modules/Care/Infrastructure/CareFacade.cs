@@ -8,6 +8,19 @@ namespace Zpi.Modules.Care.Infrastructure;
 
 internal sealed class CareFacade(CareDbContext context, IIdentityFacade identity) : ICareFacade
 {
+    public async Task<IReadOnlyCollection<Guid>> GetAccessibleSeniorIdsAsync(Guid accountId, IReadOnlyCollection<Guid> seniorIds,
+        CancellationToken cancellationToken)
+    {
+        var accounts = await identity.GetActiveAccountsAsync(seniorIds.Append(accountId).Distinct().ToArray(), cancellationToken);
+        if (!accounts.TryGetValue(accountId, out var account)) return [];
+        if (account.Role == "senior") return seniorIds.Contains(accountId) ? [accountId] : [];
+        if (account.Role != "caretaker") return [];
+        var active = seniorIds.Where(id => accounts.TryGetValue(id, out var senior) && senior.Role == "senior").ToArray();
+        return await context.SeniorCareRelationships.AsNoTracking()
+            .Where(row => row.CaretakerId == accountId && active.Contains(row.SeniorId) && row.Status == RelationshipStatus.Active)
+            .Select(row => row.SeniorId).Distinct().ToArrayAsync(cancellationToken);
+    }
+
     public async Task<bool> CanAccessSeniorAsync(Guid accountId, Guid seniorId, CancellationToken cancellationToken)
     {
         if (accountId != seniorId) return await HasActiveRelationshipAsync(accountId, seniorId, cancellationToken);

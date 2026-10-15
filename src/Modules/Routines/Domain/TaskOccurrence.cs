@@ -16,5 +16,7 @@ public sealed class TaskOccurrence : VersionedEntity
     public required string Title { get; set; }
     public required string Instructions { get; set; }
     public OccurrenceStatus Status { get; set; }
+    public DateTimeOffset? BeforeReminderQueuedAt { get; set; }
+    public DateTimeOffset? DueReminderQueuedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

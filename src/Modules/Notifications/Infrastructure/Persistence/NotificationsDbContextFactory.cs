@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Zpi.Database;
 
-namespace Zpi.Modules.Notifications.Persistence;
+namespace Zpi.Modules.Notifications.Infrastructure.Persistence;
 
 public sealed class NotificationsDbContextFactory : IDesignTimeDbContextFactory<NotificationsDbContext>
 {

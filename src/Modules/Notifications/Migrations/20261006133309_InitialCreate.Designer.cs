@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using Zpi.Modules.Notifications.Persistence;
+using Zpi.Modules.Notifications.Infrastructure.Persistence;
 
 #nullable disable
 

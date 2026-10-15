@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Database;
 
-namespace Zpi.Modules.Notifications.Persistence.Configurations;
+namespace Zpi.Modules.Notifications.Infrastructure.Persistence.Configurations;
 
 internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>
 {
@@ -18,6 +18,8 @@ internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notif
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+        builder.Property(x => x.Source).HasColumnName("source").HasMaxLength(100).HasDefaultValue("legacy").IsRequired();
+        builder.Property(x => x.ExpiresAt).HasColumnName("expires_at");
         builder.Property(x => x.IntegrationEventId).HasColumnName("integration_event_id");
         builder.Property(x => x.RecipientAccountId).HasColumnName("recipient_account_id");
         builder.Property(x => x.SeniorId).HasColumnName("senior_id");

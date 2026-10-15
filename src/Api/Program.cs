@@ -23,7 +23,7 @@ builder.Services.AddSeniorProfileModule(builder.Configuration);
 builder.Services.AddSafetyModule(builder.Configuration);
 builder.Services.AddRoutinesModule(builder.Configuration);
 builder.Services.AddMedicalRecordsModule(builder.Configuration);
-builder.Services.AddNotificationsModule(builder.Configuration);
+builder.Services.AddNotificationsModule(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 app.UseExceptionHandler();

@@ -14,7 +14,7 @@ using Zpi.Modules.Identity.Application.Sessions;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.Notifications.Domain;
-using Zpi.Modules.Notifications.Persistence;
+using Zpi.Modules.Notifications.Infrastructure.Persistence;
 using Zpi.Modules.SeniorProfile.Domain;
 using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 

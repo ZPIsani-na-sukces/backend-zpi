@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Zpi.Domain;
+using Zpi.Modules.Identity.Application.Sessions;
 using Zpi.Shared.Pagination;
 using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.Identity.Domain;
@@ -7,8 +8,27 @@ using Zpi.Modules.Identity.Infrastructure.Persistence;
 
 namespace Zpi.Modules.Identity.Infrastructure;
 
-internal sealed class IdentityFacade(IdentityDbContext context) : IIdentityFacade
+internal sealed class IdentityFacade(IdentityDbContext context, ISessionStore sessions, TimeProvider clock) : IIdentityFacade
 {
+    public async Task<NotificationRecipient?> GetNotificationRecipientAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        var account = await context.Accounts.AsNoTracking()
+            .Where(user => user.Id == accountId && user.Status == AccountStatus.Active && user.PhoneVerifiedAt != null)
+            .Join(context.Roles, user => user.RoleId, role => role.Id,
+                (user, role) => new { user.Id, user.PhoneNumber, role.Code })
+            .SingleOrDefaultAsync(cancellationToken);
+        return account is null ? null : new NotificationRecipient(account.Id, account.Code.ToCamelCase(), account.PhoneNumber);
+    }
+
+    public async Task<bool> IsSessionActiveAsync(Guid accountId, Guid sessionId, CancellationToken cancellationToken)
+    {
+        var session = await sessions.GetAsync(sessionId, cancellationToken);
+        return session is not null && session.AccountId == accountId && session.ExpiresAt > clock.GetUtcNow() &&
+            await context.Accounts.AsNoTracking().AnyAsync(account => account.Id == accountId &&
+                account.Status == AccountStatus.Active && account.PhoneVerifiedAt != null && account.SecurityStamp == session.SecurityStamp,
+                cancellationToken);
+    }
+
     public async Task<IReadOnlyDictionary<Guid, AccountSummary>> GetAccountSummariesAsync(IReadOnlyCollection<Guid> accountIds,
         CancellationToken cancellationToken)
     {
