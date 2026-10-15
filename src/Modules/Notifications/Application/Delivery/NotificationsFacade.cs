@@ -44,7 +44,7 @@ internal sealed class NotificationsFacade(NotificationsDbContext context, IIdent
         context.NotificationDeliveries.Add(new NotificationDelivery
         {
             NotificationId = notification.Id,
-            Channel = recipient.Role == "senior" ? DeliveryChannel.Push : DeliveryChannel.Sms,
+            Channel = recipient.Role == AccountRoles.Senior ? DeliveryChannel.Push : DeliveryChannel.Sms,
             Status = DeliveryStatus.Pending,
             NextAttemptAt = now
         });

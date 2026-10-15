@@ -3,11 +3,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Zpi.Modules.Safety.Application.Telemetry.Upload;
+using Zpi.Modules.Identity.Contracts;
 
 namespace Zpi.Modules.Safety.Api;
 
 [ApiController]
-[Authorize(Roles = "senior")]
+[Authorize(Roles = AccountRoles.Senior)]
 [Route("api/v1/me/devices/{deviceId}/telemetry")]
 [Tags("Safety")]
 [EnableRateLimiting("telemetry")]

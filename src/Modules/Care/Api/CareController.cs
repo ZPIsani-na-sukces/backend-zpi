@@ -15,6 +15,7 @@ using Zpi.Modules.Care.Application.Relationships;
 using Zpi.Modules.Care.Application.Relationships.ListCaretakers;
 using Zpi.Modules.Care.Application.Relationships.ListSeniors;
 using Zpi.Modules.Care.Application.Relationships.Remove;
+using Zpi.Modules.Identity.Contracts;
 
 namespace Zpi.Modules.Care.Api;
 
@@ -26,7 +27,7 @@ namespace Zpi.Modules.Care.Api;
 public sealed class CareController : ControllerBase
 {
     [HttpPost("care-invitations")]
-    [Authorize(Roles = "caretaker")]
+    [Authorize(Roles = AccountRoles.Caretaker)]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<CareInvitationDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
@@ -58,7 +59,7 @@ public sealed class CareController : ControllerBase
     }
 
     [HttpPost("care-invitations/{invitationId}/accept")]
-    [Authorize(Roles = "senior")]
+    [Authorize(Roles = AccountRoles.Senior)]
     [ProducesResponseType<CareRelationshipDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -70,7 +71,7 @@ public sealed class CareController : ControllerBase
     }
 
     [HttpPost("care-invitations/{invitationId}/reject")]
-    [Authorize(Roles = "senior")]
+    [Authorize(Roles = AccountRoles.Senior)]
     [ProducesResponseType<CareInvitationDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -82,7 +83,7 @@ public sealed class CareController : ControllerBase
     }
 
     [HttpDelete("care-invitations/{invitationId}")]
-    [Authorize(Roles = "caretaker")]
+    [Authorize(Roles = AccountRoles.Caretaker)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -93,7 +94,7 @@ public sealed class CareController : ControllerBase
     }
 
     [HttpGet("me/seniors")]
-    [Authorize(Roles = "caretaker")]
+    [Authorize(Roles = AccountRoles.Caretaker)]
     [ProducesResponseType<PageDto<SeniorSummaryDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> ListSeniors([FromQuery] ListSeniorsRequest request,
         [FromServices] ListSeniorsHandler handler, CancellationToken cancellationToken)

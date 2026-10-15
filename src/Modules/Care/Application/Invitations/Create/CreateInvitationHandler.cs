@@ -16,7 +16,7 @@ public sealed class CreateInvitationHandler(CareDbContext context, IIdentityFaca
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         var accounts = await identity.GetActiveAccountsAsync([senior.UserId, command.AccountId], cancellationToken);
         if (accounts.Count != 2) return CareResult<CareInvitationDto>.Failed(CareFailure.ResourceNotFound);
-        if (accounts[command.AccountId].Role != "caretaker")
+        if (accounts[command.AccountId].Role != AccountRoles.Caretaker)
             return CareResult<CareInvitationDto>.Failed(CareFailure.OperationForbidden);
         if (await context.SeniorCareRelationships.AnyAsync(relationship => relationship.SeniorId == senior.UserId &&
             relationship.CaretakerId == command.AccountId && relationship.Status == RelationshipStatus.Active, cancellationToken))

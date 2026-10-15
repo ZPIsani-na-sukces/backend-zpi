@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Zpi.Modules.SeniorProfile.Application;
 using Zpi.Modules.SeniorProfile.Application.Contacts.Settings;
 using Zpi.Shared.Versioning;
+using Zpi.Modules.Identity.Contracts;
 
 namespace Zpi.Modules.SeniorProfile.Api;
 
@@ -29,7 +30,7 @@ public sealed class ContactSettingsController : ControllerBase
     }
 
     [HttpPut]
-    [Authorize(Roles = "caretaker")]
+    [Authorize(Roles = AccountRoles.Caretaker)]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<ContactSettingsDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]

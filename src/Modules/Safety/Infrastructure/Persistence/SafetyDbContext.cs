@@ -12,6 +12,7 @@ public sealed class SafetyDbContext(DbContextOptions<SafetyDbContext> options) :
     public DbSet<GeoZone> GeoZones => Set<GeoZone>();
     public DbSet<LocationSample> LocationSamples => Set<LocationSample>();
     public DbSet<BatterySample> BatterySamples => Set<BatterySample>();
+    public DbSet<SosTriggerReceipt> SosTriggerReceipts => Set<SosTriggerReceipt>();
     public DbSet<SosIncident> SosIncidents => Set<SosIncident>();
     public DbSet<GeofenceIncident> GeofenceIncidents => Set<GeofenceIncident>();
     public DbSet<LowBatteryIncident> LowBatteryIncidents => Set<LowBatteryIncident>();

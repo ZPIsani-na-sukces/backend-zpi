@@ -92,5 +92,5 @@ public sealed class RoutineReminderSource(RoutinesDbContext context, IIdentityFa
         .Where(row => row.Id == eventId && row.ProcessedAt == null).ExecuteUpdateAsync(update =>
             update.SetProperty(row => row.Attempts, row => row.Attempts + 1)
                 .SetProperty(row => row.NextAttemptAt, clock.GetUtcNow().AddMinutes(1))
-                .SetProperty(row => row.LastError, "notificationProcessingFailed"), cancellationToken);
+                .SetProperty(row => row.LastError, INotificationEventSource.ProcessingFailureCode), cancellationToken);
 }

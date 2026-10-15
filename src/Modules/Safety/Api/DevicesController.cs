@@ -7,6 +7,7 @@ using Zpi.Modules.Safety.Application.Devices.List;
 using Zpi.Modules.Safety.Application.Devices.Register;
 using Zpi.Modules.Safety.Application.Devices.Retire;
 using Zpi.Modules.Safety.Application.Devices.Switch;
+using Zpi.Modules.Identity.Contracts;
 
 namespace Zpi.Modules.Safety.Api;
 
@@ -54,7 +55,7 @@ public sealed class DevicesController : SafetyController
     }
 
     [HttpPost("me/devices/{deviceId}/switch")]
-    [Authorize(Roles = "senior")]
+    [Authorize(Roles = AccountRoles.Senior)]
     [ProducesResponseType<DeviceDto>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Switch(Guid deviceId, [FromServices] SwitchDeviceHandler handler, CancellationToken cancellationToken)
     {

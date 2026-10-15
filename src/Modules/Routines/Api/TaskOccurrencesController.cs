@@ -7,6 +7,7 @@ using Zpi.Modules.Routines.Application.Occurrences.Decision;
 using Zpi.Modules.Routines.Application.Occurrences.Get;
 using Zpi.Modules.Routines.Application.Occurrences.List;
 using Zpi.Shared.Pagination;
+using Zpi.Modules.Identity.Contracts;
 
 namespace Zpi.Modules.Routines.Api;
 
@@ -39,7 +40,7 @@ public sealed class TaskOccurrencesController : RoutinesController
     }
 
     [HttpPut("{occurrenceId}/decision")]
-    [Authorize(Roles = "senior")]
+    [Authorize(Roles = AccountRoles.Senior)]
     [RequestSizeLimit(16_384)]
     [ProducesResponseType<TaskOccurrenceDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]

@@ -37,6 +37,7 @@ internal sealed class SosIncidentConfiguration : IEntityTypeConfiguration<SosInc
         builder.Property(x => x.ResolutionNote).HasColumnName("resolution_note");
         builder.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken();
         builder.HasIndex(x => new { x.SeniorId, x.ReceivedAt });
+        builder.HasIndex(x => x.SeniorId).IsUnique().HasFilter("status <> 'resolved'");
         builder.Property(x => x.ResolutionNote).HasMaxLength(1000);
         builder.HasOne<Device>().WithMany().HasForeignKey(x => x.DeviceId).OnDelete(DeleteBehavior.Restrict);
     }

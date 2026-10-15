@@ -696,6 +696,10 @@ namespace Zpi.Modules.Safety.Migrations
 
                     b.HasIndex("DeviceId");
 
+                    b.HasIndex("SeniorId")
+                        .IsUnique()
+                        .HasFilter("status <> 'resolved'");
+
                     b.HasIndex("SeniorId", "ReceivedAt");
 
                     b.ToTable("sos_incident", "safety", t =>
@@ -712,6 +716,27 @@ namespace Zpi.Modules.Safety.Migrations
 
                             t.HasCheckConstraint("ck_sos_incident_version", "version >= 1");
                         });
+                });
+
+            modelBuilder.Entity("Zpi.Modules.Safety.Domain.SosTriggerReceipt", b =>
+                {
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("device_id");
+
+                    b.Property<DateTimeOffset>("TriggeredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("triggered_at");
+
+                    b.Property<Guid>("IncidentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("incident_id");
+
+                    b.HasKey("DeviceId", "TriggeredAt");
+
+                    b.HasIndex("IncidentId");
+
+                    b.ToTable("sos_trigger_receipt", "safety");
                 });
 
             modelBuilder.Entity("Zpi.Modules.Safety.Domain.BatterySample", b =>
@@ -761,6 +786,21 @@ namespace Zpi.Modules.Safety.Migrations
                     b.HasOne("Zpi.Modules.Safety.Domain.Device", null)
                         .WithMany()
                         .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Zpi.Modules.Safety.Domain.SosTriggerReceipt", b =>
+                {
+                    b.HasOne("Zpi.Modules.Safety.Domain.Device", null)
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Zpi.Modules.Safety.Domain.SosIncident", null)
+                        .WithMany()
+                        .HasForeignKey("IncidentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

@@ -2,6 +2,8 @@ namespace Zpi.Modules.Notifications.Contracts;
 
 public interface INotificationEventSource
 {
+    public const string ProcessingFailureCode = "notificationProcessingFailed";
+
     string Name { get; }
     Task PrepareAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<PendingNotificationEvent>> ReadPendingAsync(int limit, CancellationToken cancellationToken);

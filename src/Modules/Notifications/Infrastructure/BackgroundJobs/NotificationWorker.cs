@@ -5,12 +5,11 @@ using Zpi.Modules.Notifications.Application.Delivery;
 
 namespace Zpi.Modules.Notifications.Infrastructure.BackgroundJobs;
 
-internal sealed class NotificationWorker(IServiceScopeFactory scopes, TimeProvider clock, ILogger<NotificationWorker> logger) : BackgroundService
+internal sealed class NotificationWorker(IServiceScopeFactory scopes, NotificationProcessingSignal signal, ILogger<NotificationWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15), clock);
-        do
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
@@ -19,6 +18,7 @@ internal sealed class NotificationWorker(IServiceScopeFactory scopes, TimeProvid
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (Exception exception) { logger.LogError(exception, "Notification processing failed. The next run will retry."); }
-        } while (await timer.WaitForNextTickAsync(stoppingToken));
+            await signal.WaitAsync(stoppingToken);
+        }
     }
 }

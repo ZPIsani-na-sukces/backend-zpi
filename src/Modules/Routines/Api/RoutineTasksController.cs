@@ -10,6 +10,7 @@ using Zpi.Modules.Routines.Application.Tasks.List;
 using Zpi.Modules.Routines.Application.Tasks.Update;
 using Zpi.Shared.Pagination;
 using Zpi.Shared.Versioning;
+using Zpi.Modules.Identity.Contracts;
 
 namespace Zpi.Modules.Routines.Api;
 
@@ -44,7 +45,7 @@ public sealed class RoutineTasksController : RoutinesController
     }
 
     [HttpPost]
-    [Authorize(Roles = "caretaker")]
+    [Authorize(Roles = AccountRoles.Caretaker)]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<RoutineTaskDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -59,7 +60,7 @@ public sealed class RoutineTasksController : RoutinesController
     }
 
     [HttpPut("{taskId}")]
-    [Authorize(Roles = "caretaker")]
+    [Authorize(Roles = AccountRoles.Caretaker)]
     [RequestSizeLimit(32_768)]
     [ProducesResponseType<RoutineTaskDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -78,7 +79,7 @@ public sealed class RoutineTasksController : RoutinesController
     }
 
     [HttpDelete("{taskId}")]
-    [Authorize(Roles = "caretaker")]
+    [Authorize(Roles = AccountRoles.Caretaker)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status412PreconditionFailed, "application/problem+json")]
