@@ -19,6 +19,7 @@ internal sealed class LowBatteryIncidentConfiguration : IEntityTypeConfiguration
             table.HasCheckConstraint("ck_low_battery_incident_version", "version >= 1");
             table.HasCheckConstraint("ck_low_battery_incident_status", "status IN ('open','acknowledged','resolved')");
         });
+        builder.HasIndex(x => x.SeniorId).IsUnique().HasFilter("status <> 'resolved'");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
         builder.Property(x => x.SeniorId).HasColumnName("senior_id");

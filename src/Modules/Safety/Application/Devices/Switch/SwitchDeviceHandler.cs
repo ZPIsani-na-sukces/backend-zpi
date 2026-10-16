@@ -23,6 +23,8 @@ public sealed class SwitchDeviceHandler(SafetyDbContext context, ICareFacade car
             previous.MonitoringEnabled = false;
             await context.SaveChangesAsync(cancellationToken);
         }
+        var state = await context.AutomaticAlertStates.SingleOrDefaultAsync(row => row.SeniorId == command.AccountId, cancellationToken);
+        if (state is not null) context.AutomaticAlertStates.Remove(state);
         device.MonitoringEnabled = true;
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

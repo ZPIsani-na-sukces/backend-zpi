@@ -6,18 +6,15 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.Safety.Application.Incidents.List;
 
-public sealed class ListIncidentsHandler(SafetyDbContext context, ICareFacade care, IncidentMapper mapper)
+public sealed class ListIncidentsHandler(IncidentReader reader, ICareFacade care, IncidentMapper mapper)
 {
     public async Task<SafetyResult<PageDto<IncidentDto>>> Handle(ListIncidentsQuery query, CancellationToken cancellationToken)
     {
         if (!await care.CanAccessSeniorAsync(query.AccountId, query.SeniorId, cancellationToken))
             return SafetyResult<PageDto<IncidentDto>>.Failed(SafetyFailure.ResourceNotFound);
         var request = query.Request;
-        var rows = context.SosIncidents
-            .AsNoTracking()
-            .Where(row => row.SeniorId == query.SeniorId);
-        if (request.Type.HasValue && request.Type != IncidentType.Sos) rows = rows
-            .Where(_ => false);
+        var rows = reader.Query(query.SeniorId);
+        if (request.Type.HasValue) rows = rows.Where(row => row.Type == request.Type);
         if (request.Status.HasValue) rows = rows
             .Where(row => row.Status == request.Status);
         if (request.From.HasValue)

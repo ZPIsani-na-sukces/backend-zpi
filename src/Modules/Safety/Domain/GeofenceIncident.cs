@@ -21,5 +21,6 @@ public sealed class GeofenceIncident : VersionedEntity
     public Guid? ResolvedByAccountId { get; set; }
     public string? ResolutionNote { get; set; }
     public Guid GeoZoneId { get; set; }
+    public string ZonesJson { get; set; } = "[]";
     public required string ZoneName { get; set; }
 }

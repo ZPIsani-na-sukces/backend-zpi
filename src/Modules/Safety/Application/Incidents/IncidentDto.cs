@@ -7,4 +7,14 @@ public sealed record IncidentDto(Guid IncidentId, Guid SeniorId, Guid DeviceId, 
     DateTimeOffset? AcknowledgedAt, AccountSummary? AcknowledgedBy, DateTimeOffset? ResolvedAt,
     AccountSummary? ResolvedBy, string? ResolutionNote);
 
-public sealed record IncidentDetailsDto(string Kind);
+public sealed record IncidentDetailsDto(string Kind)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ZoneId { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ZoneName { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Zpi.Modules.Safety.Application.Alerts.DepartedZoneDto>? Zones { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? BatteryLevelPercent { get; init; }
+}

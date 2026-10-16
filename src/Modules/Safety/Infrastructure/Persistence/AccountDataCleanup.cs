@@ -15,8 +15,9 @@ internal sealed class AccountDataCleanup(SafetyDbContext context) : IAccountData
         await context.SosTriggerReceipts.Where(row => incidentIds.Contains(row.IncidentId) || devices.Contains(row.DeviceId)).ExecuteDeleteAsync(cancellationToken);
         var senior = JsonSerializer.Serialize(new { SeniorId = accountId });
         var recipient = JsonSerializer.Serialize(new { RecipientAccountId = accountId });
-        await context.OutboxMessages.Where(row => row.Type == SafetyNotificationEvents.SosTriggered &&
+        await context.OutboxMessages.Where(row => SafetyNotificationEvents.Types.Contains(row.Type) &&
             (EF.Functions.JsonContains(row.Payload, senior) || EF.Functions.JsonContains(row.Payload, recipient))).ExecuteDeleteAsync(cancellationToken);
+        await context.AutomaticAlertStates.Where(row => row.SeniorId == accountId || devices.Contains(row.DeviceId)).ExecuteDeleteAsync(cancellationToken);
         await context.SosIncidents.Where(row => row.SeniorId == accountId || devices.Contains(row.DeviceId)).ExecuteDeleteAsync(cancellationToken);
         await context.GeofenceIncidents.Where(row => row.SeniorId == accountId || devices.Contains(row.DeviceId)).ExecuteDeleteAsync(cancellationToken);
         await context.LowBatteryIncidents.Where(row => row.SeniorId == accountId || devices.Contains(row.DeviceId)).ExecuteDeleteAsync(cancellationToken);

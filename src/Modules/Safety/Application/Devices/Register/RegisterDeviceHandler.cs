@@ -28,14 +28,24 @@ public sealed class RegisterDeviceHandler(SafetyDbContext context, ICareFacade c
         var now = clock.GetUtcNow();
         if (device is null)
         {
-            device = new Device { AssignedAccountId = command.AccountId, InstallationId = request.InstallationId,
-                AppVersion = request.AppVersion.Trim(), RegisteredAt = now };
+            device = new Device
+            {
+                AssignedAccountId = command.AccountId,
+                InstallationId = request.InstallationId,
+                AppVersion = request.AppVersion.Trim(),
+                RegisteredAt = now
+            };
             context.Devices.Add(device);
         }
         else if (device.RetiredAt is not null)
         {
             device.RetiredAt = null;
             device.RegisteredAt = now;
+        }
+        if (device.MonitoringEnabled != request.MonitoringEnabled)
+        {
+            var state = await context.AutomaticAlertStates.SingleOrDefaultAsync(row => row.SeniorId == command.AccountId && row.DeviceId == device.Id, cancellationToken);
+            if (state is not null) context.AutomaticAlertStates.Remove(state);
         }
         device.Platform = request.Platform;
         device.AppVersion = request.AppVersion.Trim();

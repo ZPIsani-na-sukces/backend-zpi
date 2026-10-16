@@ -12,6 +12,8 @@ public sealed class RetireDeviceHandler(SafetyDbContext context, TimeProvider cl
         if (device is null) return SafetyResult<bool>.Failed(SafetyFailure.ResourceNotFound);
         if (device.RetiredAt is null)
         {
+            var state = await context.AutomaticAlertStates.SingleOrDefaultAsync(row => row.SeniorId == command.AccountId && row.DeviceId == device.Id, cancellationToken);
+            if (state is not null) context.AutomaticAlertStates.Remove(state);
             device.MonitoringEnabled = false;
             device.RetiredAt = clock.GetUtcNow();
             await context.SaveChangesAsync(cancellationToken);

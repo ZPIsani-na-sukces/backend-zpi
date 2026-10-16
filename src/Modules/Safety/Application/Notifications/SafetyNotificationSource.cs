@@ -11,7 +11,7 @@ public sealed class SafetyNotificationSource(SafetyDbContext context, TimeProvid
     public string Name => SafetyNotificationEvents.Source;
 
     public Task PrepareAsync(CancellationToken cancellationToken) => context.OutboxMessages
-        .Where(row => row.Type == SafetyNotificationEvents.SosTriggered && row.ProcessedAt < clock.GetUtcNow().AddDays(-7))
+        .Where(row => SafetyNotificationEvents.Types.Contains(row.Type) && row.ProcessedAt < clock.GetUtcNow().AddDays(-7))
         .ExecuteDeleteAsync(cancellationToken);
 
     public async Task<IReadOnlyList<PendingNotificationEvent>> ReadPendingAsync(int limit, CancellationToken cancellationToken)
@@ -19,7 +19,7 @@ public sealed class SafetyNotificationSource(SafetyDbContext context, TimeProvid
         var now = clock.GetUtcNow();
         return await context.OutboxMessages
             .AsNoTracking()
-            .Where(row => row.Type == SafetyNotificationEvents.SosTriggered && row.ProcessedAt == null && row.Attempts < 10 &&
+            .Where(row => SafetyNotificationEvents.Types.Contains(row.Type) && row.ProcessedAt == null && row.Attempts < 10 &&
                 (row.NextAttemptAt == null || row.NextAttemptAt <= now))
             .OrderBy(row => row.OccurredAt)
             .ThenBy(row => row.Id)
@@ -28,23 +28,40 @@ public sealed class SafetyNotificationSource(SafetyDbContext context, TimeProvid
             .ToListAsync(cancellationToken);
     }
 
-    public Task<bool> IsRelevantAsync(NotificationEvent notification, CancellationToken cancellationToken)
+    public async Task<bool> IsRelevantAsync(NotificationEvent notification, CancellationToken cancellationToken)
     {
-        if (notification.Type != NotificationType.Sos || notification.TargetKind != NotificationTargetKind.Incident ||
-            notification.SeniorId is null || notification.RecipientAccountId == notification.SeniorId) return Task.FromResult(false);
-        return context.SosIncidents
+        if (notification.TargetKind != NotificationTargetKind.Incident || notification.SeniorId is null ||
+            notification.RecipientAccountId == notification.SeniorId) return false;
+        var seniorId = notification.SeniorId.Value;
+        if (notification.Type == NotificationType.Sos)
+            return await context.SosIncidents
             .AsNoTracking()
             .AnyAsync(row => row.Id == notification.TargetId &&
-            row.SeniorId == notification.SeniorId && row.Status == IncidentStatus.Open, cancellationToken);
+                row.SeniorId == seniorId && row.Status == IncidentStatus.Open, cancellationToken);
+        var state = await context.AutomaticAlertStates
+            .AsNoTracking()
+            .SingleOrDefaultAsync(row => row.SeniorId == seniorId, cancellationToken);
+        if (state is null || !await context.Devices.AnyAsync(row => row.Id == state.DeviceId && row.MonitoringEnabled && row.RetiredAt == null, cancellationToken)) return false;
+        if (notification.Type == NotificationType.GeofenceExit && state.GeofenceNotificationActive && state.GeofenceIncidentId == notification.TargetId)
+            return await context.GeofenceIncidents
+            .AsNoTracking()
+            .AnyAsync(row => row.Id == notification.TargetId &&
+                row.SeniorId == seniorId && row.Status == IncidentStatus.Open, cancellationToken);
+        if (notification.Type == NotificationType.LowBattery && state.BatteryNotificationActive && state.BatteryIncidentId == notification.TargetId)
+            return await context.LowBatteryIncidents
+            .AsNoTracking()
+            .AnyAsync(row => row.Id == notification.TargetId &&
+                row.SeniorId == seniorId && row.Status == IncidentStatus.Open, cancellationToken);
+        return false;
     }
 
     public Task CompleteAsync(Guid eventId, CancellationToken cancellationToken) => context.OutboxMessages
-        .Where(row => row.Id == eventId && row.Type == SafetyNotificationEvents.SosTriggered && row.ProcessedAt == null)
+        .Where(row => row.Id == eventId && SafetyNotificationEvents.Types.Contains(row.Type) && row.ProcessedAt == null)
         .ExecuteUpdateAsync(update => update.SetProperty(row => row.ProcessedAt, clock.GetUtcNow())
             .SetProperty(row => row.NextAttemptAt, (DateTimeOffset?)null).SetProperty(row => row.LastError, (string?)null), cancellationToken);
 
     public Task RetryAsync(Guid eventId, CancellationToken cancellationToken) => context.OutboxMessages
-        .Where(row => row.Id == eventId && row.Type == SafetyNotificationEvents.SosTriggered && row.ProcessedAt == null)
+        .Where(row => row.Id == eventId && SafetyNotificationEvents.Types.Contains(row.Type) && row.ProcessedAt == null)
         .ExecuteUpdateAsync(update => update.SetProperty(row => row.Attempts, row => row.Attempts + 1)
             .SetProperty(row => row.NextAttemptAt, clock.GetUtcNow().AddMinutes(1))
             .SetProperty(row => row.LastError, INotificationEventSource.ProcessingFailureCode), cancellationToken);

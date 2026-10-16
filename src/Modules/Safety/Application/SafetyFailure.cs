@@ -6,5 +6,7 @@ public enum SafetyFailure
     OperationForbidden,
     ActiveDeviceExists,
     DeviceLimitReached,
+    VersionMismatch,
+    ZoneLimitReached,
     MonitoringDisabled
 }

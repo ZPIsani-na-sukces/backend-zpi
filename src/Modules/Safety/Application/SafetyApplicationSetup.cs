@@ -1,3 +1,11 @@
+using Zpi.Modules.Safety.Application.Alerts;
+using Zpi.Modules.Safety.Application.Geozones.Delete;
+using Zpi.Modules.Safety.Application.Geozones.Update;
+using Zpi.Modules.Safety.Application.Geozones.Create;
+using Zpi.Modules.Safety.Application.Geozones.List;
+using Zpi.Modules.Safety.Application.Geozones.Get;
+using Zpi.Modules.Safety.Application.Home.Save;
+using Zpi.Modules.Safety.Application.Home.Get;
 using FluentValidation;
 using Zpi.Modules.Notifications.Contracts;
 using Zpi.Modules.Safety.Application.Notifications;
@@ -21,6 +29,15 @@ public static class SafetyApplicationSetup
 {
     public static IServiceCollection AddSafetyApplication(this IServiceCollection services)
     {
+        services.AddScoped<GetHomeAddressHandler>();
+        services.AddScoped<SaveHomeAddressHandler>();
+        services.AddScoped<GetGeoZonesHandler>();
+        services.AddScoped<ListGeoZonesHandler>();
+        services.AddScoped<CreateGeoZoneHandler>();
+        services.AddScoped<UpdateGeoZoneHandler>();
+        services.AddScoped<DeleteGeoZoneHandler>();
+        services.AddScoped<AutomaticAlertProcessor>();
+        services.AddScoped<IncidentReader>();
         services.AddScoped<IncidentMapper>();
         services.AddScoped<TriggerSosHandler>();
         services.AddScoped<GetIncidentHandler>();

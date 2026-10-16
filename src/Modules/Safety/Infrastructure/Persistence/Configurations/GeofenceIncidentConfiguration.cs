@@ -18,6 +18,7 @@ internal sealed class GeofenceIncidentConfiguration : IEntityTypeConfiguration<G
             table.HasCheckConstraint("ck_geofence_incident_version", "version >= 1");
             table.HasCheckConstraint("ck_geofence_incident_status", "status IN ('open','acknowledged','resolved')");
         });
+        builder.HasIndex(x => x.SeniorId).IsUnique().HasFilter("status <> 'resolved'");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
         builder.Property(x => x.SeniorId).HasColumnName("senior_id");
@@ -37,6 +38,7 @@ internal sealed class GeofenceIncidentConfiguration : IEntityTypeConfiguration<G
         builder.Property(x => x.ResolutionNote).HasColumnName("resolution_note");
         builder.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken();
         builder.Property(x => x.GeoZoneId).HasColumnName("geo_zone_id");
+        builder.Property(x => x.ZonesJson).HasColumnName("zones_json").HasColumnType("jsonb");
         builder.Property(x => x.ZoneName).HasColumnName("zone_name").IsRequired();
         builder.HasIndex(x => new { x.SeniorId, x.ReceivedAt });
         builder.Property(x => x.ResolutionNote).HasMaxLength(1000);

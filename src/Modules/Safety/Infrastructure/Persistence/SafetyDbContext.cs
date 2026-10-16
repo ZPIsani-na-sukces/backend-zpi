@@ -7,6 +7,7 @@ namespace Zpi.Modules.Safety.Infrastructure.Persistence;
 public sealed class SafetyDbContext(DbContextOptions<SafetyDbContext> options) : DbContext(options)
 {
     public const string Schema = "safety";
+    public DbSet<AutomaticAlertState> AutomaticAlertStates => Set<AutomaticAlertState>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<HomeAddress> HomeAddresses => Set<HomeAddress>();
     public DbSet<GeoZone> GeoZones => Set<GeoZone>();
