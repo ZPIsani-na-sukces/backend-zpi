@@ -25,6 +25,7 @@ internal sealed class MedicalFileConfiguration : IEntityTypeConfiguration<Medica
         builder.Property(x => x.ChecksumSha256).HasColumnName("checksum_sha256").IsRequired();
         builder.Property(x => x.CreatedByAccountId).HasColumnName("created_by_account_id");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at");
+        builder.Property(x => x.PurgedAt).HasColumnName("purged_at");
         builder.Property(x => x.DeletedAt).HasColumnName("deleted_at");
         builder.HasIndex(x => x.ObjectKey).IsUnique();
         builder.Property(x => x.ObjectKey).HasMaxLength(512);

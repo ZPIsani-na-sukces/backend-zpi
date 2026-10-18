@@ -33,3 +33,6 @@ logs/
 
 *.md
 AGENTS.md
+
+App_Data/
+.local/

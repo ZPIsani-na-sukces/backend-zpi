@@ -77,6 +77,45 @@ namespace Zpi.Modules.MedicalRecords.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Zpi.Modules.MedicalRecords.Domain.MedicalAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("action");
+
+                    b.Property<Guid?>("ActorAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_account_id");
+
+                    b.Property<Guid?>("FileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("file_id");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid?>("RecordId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("record_id");
+
+                    b.Property<Guid>("SeniorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("senior_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SeniorId", "OccurredAt");
+
+                    b.ToTable("medical_audit_entry", "medical");
+                });
+
             modelBuilder.Entity("Zpi.Modules.MedicalRecords.Domain.MedicalFile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -122,6 +161,10 @@ namespace Zpi.Modules.MedicalRecords.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
                         .HasColumnName("original_name");
+
+                    b.Property<DateTimeOffset?>("PurgedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("purged_at");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint")

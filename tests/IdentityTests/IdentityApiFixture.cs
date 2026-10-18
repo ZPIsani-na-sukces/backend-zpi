@@ -48,6 +48,7 @@ public sealed class IdentityApiFixture : IAsyncLifetime
     private string? adminConnection;
     private string? databaseName;
     public string RedisConnectionString { get; private set; } = "";
+    public string MedicalStorageRoot { get; } = Path.Combine(Path.GetTempPath(), "zpi-medical-tests-" + Guid.CreateVersion7().ToString("N"));
     public string RedisPrefix { get; } = $"zpi:test:{Guid.CreateVersion7():N}:";
     public string ConnectionString { get; private set; } = "";
 
@@ -81,7 +82,7 @@ public sealed class IdentityApiFixture : IAsyncLifetime
         return new IdentityDbContext(options.Options);
     }
 
-    public WebApplicationFactory<Program> Factory() => new ApiFactory(ConnectionString, RedisConnectionString, RedisPrefix);
+    public WebApplicationFactory<Program> Factory() => new ApiFactory(ConnectionString, RedisConnectionString, RedisPrefix, MedicalStorageRoot);
 
     public async Task DisposeAsync()
     {
@@ -97,9 +98,10 @@ public sealed class IdentityApiFixture : IAsyncLifetime
         await connection.OpenAsync();
         await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS {databaseName} WITH (FORCE)", connection);
         await drop.ExecuteNonQueryAsync();
+        if (Directory.Exists(MedicalStorageRoot)) Directory.Delete(MedicalStorageRoot, true);
     }
 
-    private sealed class ApiFactory(string connectionString, string redisConnectionString, string redisPrefix) : WebApplicationFactory<Program>
+    private sealed class ApiFactory(string connectionString, string redisConnectionString, string redisPrefix, string medicalStorageRoot) : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -108,6 +110,9 @@ public sealed class IdentityApiFixture : IAsyncLifetime
                 ["ConnectionStrings:Database"] = connectionString,
                 ["ConnectionStrings:Redis"] = redisConnectionString,
                 ["Redis:KeyPrefix"] = redisPrefix,
+                ["MedicalRecords:StorageProvider"] = "Local",
+                ["MedicalRecords:StorageRoot"] = medicalStorageRoot,
+                ["MedicalRecords:CleanupWorkerEnabled"] = "false",
                 ["AccountDeletion:Enabled"] = "false",
                 ["Routines:WorkerEnabled"] = "false",
                 ["Notifications:WorkerEnabled"] = "false",
@@ -131,6 +136,9 @@ public sealed class IdentityApiFixture : IAsyncLifetime
                 ["ConnectionStrings:Database"] = connectionString,
                 ["ConnectionStrings:Redis"] = redisConnectionString,
                 ["Redis:KeyPrefix"] = redisPrefix,
+                ["MedicalRecords:StorageProvider"] = "Local",
+                ["MedicalRecords:StorageRoot"] = medicalStorageRoot,
+                ["MedicalRecords:CleanupWorkerEnabled"] = "false",
                 ["AccountDeletion:Enabled"] = "false",
                 ["Routines:WorkerEnabled"] = "false",
                 ["Notifications:WorkerEnabled"] = "false",

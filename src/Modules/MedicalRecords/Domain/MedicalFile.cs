@@ -11,5 +11,6 @@ public sealed class MedicalFile
     public required string ChecksumSha256 { get; set; }
     public Guid CreatedByAccountId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? PurgedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
 }

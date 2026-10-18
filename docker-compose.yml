@@ -27,6 +27,47 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+  storage-init:
+    build: ./docker/seaweedfs
+    environment:
+      S3_BUCKET: ${S3_BUCKET:-zpi-medical}
+      LOCAL_UID: ${LOCAL_UID:-1000}
+      LOCAL_GID: ${LOCAL_GID:-1000}
+    volumes:
+      - ./.local/seaweedfs:/secrets
+      - seaweedfs_data:/storage-data:ro
+    network_mode: none
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+    command: ["mini", "-dir=/data", "-ip=127.0.0.1", "-ip.bind=0.0.0.0", "-s3.config=/etc/seaweedfs/s3.json", "-s3.cert.file=/etc/seaweedfs/tls.crt", "-s3.key.file=/etc/seaweedfs/tls.key", "-s3.iam=false", "-s3.autoCreateBucket=false", "-bucket=${S3_BUCKET:-zpi-medical}", "-webdav=false", "-admin.ui=false", "-master.telemetry=false"]
+    ports:
+      - "127.0.0.1:${S3_PORT:-8333}:8333"
+    volumes:
+      - seaweedfs_data:/data
+      - ./.local/seaweedfs/server:/etc/seaweedfs:ro
+      - ./.local/seaweedfs/bootstrap:/bootstrap:ro
+      - ./docker/seaweedfs/bootstrap.sh:/usr/local/bin/bootstrap-storage.sh:ro
+    post_start:
+      - command: sh /usr/local/bin/bootstrap-storage.sh
+        user: root
+        environment:
+          S3_BUCKET: ${S3_BUCKET:-zpi-medical}
+          S3_SECRETS_DIRECTORY: /bootstrap
+    networks: [storage]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test \"$$(curl --silent --cacert /etc/seaweedfs/ca.crt --max-time 3 --output /dev/null --write-out '%{http_code}' https://localhost:8333/)\" = 403"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+networks:
+  storage:
+    driver: bridge
 volumes:
   redis_data:
   postgres_data:
+  seaweedfs_data:

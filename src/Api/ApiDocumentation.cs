@@ -79,6 +79,7 @@ public static class ApiDocumentation
                             response.Headers["Location"] = new OpenApiHeader { Schema = new OpenApiSchema { Type = JsonSchemaType.String } };
                     }
                 }
+                await FileUploadDocumentation.ConfigureAsync(operation, context, cancellationToken);
                 if (context.Description.RelativePath is "api/v1/auth/login" or "api/v1/auth/refresh")
                 {
                     operation.Parameters ??= [];

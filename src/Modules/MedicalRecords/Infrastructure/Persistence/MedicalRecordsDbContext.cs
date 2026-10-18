@@ -7,6 +7,7 @@ namespace Zpi.Modules.MedicalRecords.Persistence;
 public sealed class MedicalRecordsDbContext(DbContextOptions<MedicalRecordsDbContext> options) : DbContext(options)
 {
     public const string Schema = "medical";
+    public DbSet<MedicalAuditEntry> MedicalAuditEntries => Set<MedicalAuditEntry>();
     public DbSet<MedicalRecord> MedicalRecords => Set<MedicalRecord>();
     public DbSet<MedicalFile> MedicalFiles => Set<MedicalFile>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
