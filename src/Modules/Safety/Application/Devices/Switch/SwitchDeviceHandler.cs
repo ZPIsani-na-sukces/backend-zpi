@@ -13,7 +13,7 @@ public sealed class SwitchDeviceHandler(SafetyDbContext context, ICareFacade car
         var device = await context.Devices.SingleOrDefaultAsync(row => row.Id == command.DeviceId &&
             row.AssignedAccountId == command.AccountId && row.RetiredAt == null, cancellationToken);
         if (device is null) return SafetyResult<DeviceDto>.Failed(SafetyFailure.ResourceNotFound);
-        if (device.MonitoringEnabled) return SafetyResult<DeviceDto>.Success(DeviceDto.FromDevice(device));
+        if (device.MonitoringEnabled) return SafetyResult<DeviceDto>.Success(await DeviceReader.ReadAsync(context, device, cancellationToken));
 
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         var previous = await context.Devices.SingleOrDefaultAsync(row => row.AssignedAccountId == command.AccountId &&
@@ -28,6 +28,6 @@ public sealed class SwitchDeviceHandler(SafetyDbContext context, ICareFacade car
         device.MonitoringEnabled = true;
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return SafetyResult<DeviceDto>.Success(DeviceDto.FromDevice(device));
+        return SafetyResult<DeviceDto>.Success(await DeviceReader.ReadAsync(context, device, cancellationToken));
     }
 }

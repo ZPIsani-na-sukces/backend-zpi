@@ -12,11 +12,10 @@ public sealed class ListDevicesHandler(SafetyDbContext context, ICareFacade care
             return SafetyResult<IReadOnlyList<DeviceDto>>.Failed(SafetyFailure.ResourceNotFound);
 
         var accountId = query.SeniorId ?? query.AccountId;
-        var devices = await context.Devices.AsNoTracking()
+        var devices = context.Devices.AsNoTracking()
             .Where(row => row.AssignedAccountId == accountId && row.RetiredAt == null)
             .OrderByDescending(row => row.RegisteredAt)
-            .ThenByDescending(row => row.Id)
-            .ToListAsync(cancellationToken);
-        return SafetyResult<IReadOnlyList<DeviceDto>>.Success(devices.Select(DeviceDto.FromDevice).ToArray());
+            .ThenByDescending(row => row.Id);
+        return SafetyResult<IReadOnlyList<DeviceDto>>.Success(await DeviceReader.ReadAsync(context, devices, cancellationToken));
     }
 }

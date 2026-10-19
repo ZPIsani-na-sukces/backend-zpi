@@ -34,6 +34,26 @@ public sealed class SafetyTests(IdentityApiFixture fixture)
     };
 
     [PostgresFact]
+    public async Task Devices_return_the_latest_battery_even_when_older_telemetry_arrives_later()
+    {
+        await using var factory = fixture.Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        var device = await Register(senior);
+        Assert.Null(device.LatestBattery);
+        Assert.Null(Assert.Single((await senior.Client.GetFromJsonAsync<DeviceDto[]>(Devices))!).LatestBattery);
+        var now = Now();
+        Assert.Equal(HttpStatusCode.OK, (await Upload(senior, device.DeviceId,
+            Sample(now) with { Battery = new(42, true) })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Upload(senior, device.DeviceId,
+            Sample(now.AddMinutes(-1)) with { Battery = new(75, false) },
+            Sample(now.AddSeconds(1)) with { Battery = null })).StatusCode);
+        var latest = Assert.Single((await senior.Client.GetFromJsonAsync<DeviceDto[]>(Devices))!).LatestBattery;
+        Assert.Equal(new DeviceBatteryStatusDto(42, true, now), latest);
+        var switched = await senior.Client.PostAsync($"{Devices}/{device.DeviceId}/switch", null);
+        Assert.Equal(latest, (await switched.Content.ReadFromJsonAsync<DeviceDto>())!.LatestBattery);
+    }
+
+    [PostgresFact]
     public async Task Registration_updates_the_same_installation_and_caretakers_can_only_register_without_monitoring()
     {
         await using var factory = fixture.Factory();

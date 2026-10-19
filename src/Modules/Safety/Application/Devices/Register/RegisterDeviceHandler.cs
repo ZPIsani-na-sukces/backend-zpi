@@ -51,6 +51,6 @@ public sealed class RegisterDeviceHandler(SafetyDbContext context, ICareFacade c
         device.AppVersion = request.AppVersion.Trim();
         device.MonitoringEnabled = request.MonitoringEnabled;
         await context.SaveChangesAsync(cancellationToken);
-        return SafetyResult<DeviceRegistrationDto>.Success(new(DeviceDto.FromDevice(device), created));
+        return SafetyResult<DeviceRegistrationDto>.Success(new(await DeviceReader.ReadAsync(context, device, cancellationToken), created));
     }
 }
