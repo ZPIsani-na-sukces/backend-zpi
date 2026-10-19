@@ -24,6 +24,6 @@ internal sealed class RoutineTaskScheduleConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.TimeOfDay).HasColumnName("time_of_day");
         builder.HasIndex(x => new { x.RoutineTaskId, x.Revision, x.TimeOfDay }).IsUnique();
         builder.Property(x => x.TimeZone).HasMaxLength(100);
-        builder.HasOne<RoutineTask>().WithMany().HasForeignKey(x => x.RoutineTaskId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<RoutineTask>().WithMany().HasForeignKey(x => x.RoutineTaskId).OnDelete(DeleteBehavior.Cascade);
     }
 }

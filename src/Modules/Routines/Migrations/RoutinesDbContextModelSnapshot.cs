@@ -364,7 +364,7 @@ namespace Zpi.Modules.Routines.Migrations
                     b.HasOne("Zpi.Modules.Routines.Domain.RoutineTask", null)
                         .WithMany()
                         .HasForeignKey("RoutineTaskId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -373,7 +373,7 @@ namespace Zpi.Modules.Routines.Migrations
                     b.HasOne("Zpi.Modules.Routines.Domain.TaskOccurrence", null)
                         .WithMany()
                         .HasForeignKey("TaskOccurrenceId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -382,7 +382,7 @@ namespace Zpi.Modules.Routines.Migrations
                     b.HasOne("Zpi.Modules.Routines.Domain.RoutineTask", null)
                         .WithMany()
                         .HasForeignKey("RoutineTaskId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

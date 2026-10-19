@@ -49,6 +49,7 @@ public static class ApiDocumentation
                         ProblemResponse(responseType.StatusCode, problemSchema);
                 }
                 AddProblemResponse(operation, "500", problemSchema);
+                AddProblemResponse(operation, "503", problemSchema);
                 if (context.Description.ParameterDescriptions.Count > 0)
                     AddProblemResponse(operation, "400", problemSchema);
                 if (metadata.OfType<IAuthorizeData>().Any() && !metadata.OfType<IAllowAnonymous>().Any())

@@ -16,6 +16,7 @@ using Microsoft.Extensions.Options;
 using Zpi.Domain;
 using Zpi.Modules.Care.Application.Invitations;
 using Zpi.Modules.Care.Application.Relationships;
+using Zpi.Modules.Identity.Application.Accounts.DeleteAccount;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
@@ -334,17 +335,28 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
     {
         await using var factory = Factory();
         using var senior = await Actor(factory, AccountRole.Senior);
+        using var otherSenior = await Actor(factory, AccountRole.Senior);
         using var caretaker = await Actor(factory, AccountRole.Caretaker);
         await Link(senior, caretaker);
+        await Link(otherSenior, caretaker);
         var record = await Create(caretaker, senior.Id, (Pdf, "application/pdf", "file.pdf"));
+        var otherRecord = await Create(caretaker, otherSenior.Id, (Pdf, "application/pdf", "other.pdf"));
         var stored = Assert.Single(await StoredFiles(factory, record.RecordId));
+        var otherFile = Assert.Single(await StoredFiles(factory, otherRecord.RecordId));
         await using var scope = factory.Services.CreateAsyncScope();
-        foreach (var cleanup in scope.ServiceProvider.GetServices<IAccountDataCleanup>()) await cleanup.DeleteAsync(senior.Id, CancellationToken.None);
+        foreach (var cleanup in scope.ServiceProvider.GetServices<IAccountDataCleanup>())
+        {
+            await cleanup.DeleteAsync(senior.Id, CancellationToken.None);
+            await cleanup.DeleteAsync(senior.Id, CancellationToken.None);
+        }
         Assert.False(File.Exists(System.IO.Path.Combine(fixture.MedicalStorageRoot, stored.ObjectKey)));
         var db = scope.ServiceProvider.GetRequiredService<MedicalRecordsDbContext>();
         Assert.False(await db.MedicalRecords.AnyAsync(row => row.SeniorId == senior.Id));
         Assert.False(await db.MedicalFiles.AnyAsync(row => row.MedicalRecordId == record.RecordId));
         Assert.False(await db.MedicalAuditEntries.AnyAsync(row => row.SeniorId == senior.Id));
+        Assert.True(await db.MedicalRecords.AnyAsync(row => row.Id == otherRecord.RecordId));
+        Assert.True(await db.MedicalFiles.AnyAsync(row => row.Id == otherFile.Id));
+        Assert.True(File.Exists(System.IO.Path.Combine(fixture.MedicalStorageRoot, otherFile.ObjectKey)));
     }
 
     [PostgresFact]
@@ -411,6 +423,48 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
+    public async Task Account_deletion_retains_retryable_metadata_after_partial_storage_failure_and_finishes_on_retry()
+    {
+        await using var factory = Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        var record = await Create(caretaker, senior.Id, (Pdf, "application/pdf", "file.pdf"), (Png, "image/png", "scan.png"));
+        var files = await StoredFiles(factory, record.RecordId);
+        await using (var context = fixture.Context())
+        {
+            var account = (await context.Accounts.FindAsync(senior.Id))!;
+            account.Status = AccountStatus.PendingDeletion;
+            account.DeletionRequestedAt = DateTimeOffset.UtcNow.AddDays(-31);
+            await context.SaveChangesAsync();
+        }
+        await using (var broken = Factory().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddScoped<IMedicalFileStorage>(provider => new UnreliableStorage(
+                ActivatorUtilities.CreateInstance<LocalMedicalFileStorage>(provider), failSave: false, successfulDeletesBeforeFailure: 1)))))
+        {
+            await using var scope = broken.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<AccountDeletionProcessor>().ProcessAsync(CancellationToken.None);
+        }
+        await using (var context = fixture.Context())
+            Assert.True(await context.Accounts.AnyAsync(row => row.Id == senior.Id && row.Status == AccountStatus.PendingDeletion));
+        Assert.Equal(2, (await StoredFiles(factory, record.RecordId)).Length);
+        Assert.Single(files, file => File.Exists(System.IO.Path.Combine(fixture.MedicalStorageRoot, file.ObjectKey)));
+        await using var retry = factory.Services.CreateAsyncScope();
+        var processor = retry.ServiceProvider.GetRequiredService<AccountDeletionProcessor>();
+        await processor.ProcessAsync(CancellationToken.None);
+        await processor.ProcessAsync(CancellationToken.None);
+        await using (var context = fixture.Context())
+        {
+            Assert.False(await context.Accounts.AnyAsync(row => row.Id == senior.Id));
+            Assert.True(await context.Accounts.AnyAsync(row => row.Id == caretaker.Id));
+        }
+        var medical = retry.ServiceProvider.GetRequiredService<MedicalRecordsDbContext>();
+        Assert.False(await medical.MedicalRecords.AnyAsync(row => row.Id == record.RecordId));
+        Assert.False(await medical.MedicalFiles.AnyAsync(row => row.MedicalRecordId == record.RecordId));
+        Assert.All(files, file => Assert.False(File.Exists(System.IO.Path.Combine(fixture.MedicalStorageRoot, file.ObjectKey))));
+    }
+
+    [PostgresFact]
     public async Task Removed_author_does_not_remove_the_seniors_document_or_files()
     {
         await using var factory = Factory();
@@ -447,7 +501,7 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
-    public async Task Generated_openapi_exposes_json_metadata_multipart_files_and_binary_downloads()
+    public async Task Generated_openapi_exposes_medical_uploads_downloads_and_shared_errors()
     {
         await using var factory = Factory().WithWebHostBuilder(builder => builder.UseEnvironment("Development"));
         using var client = factory.CreateClient();
@@ -455,6 +509,8 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         await Status(response, 200);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var paths = json.RootElement.GetProperty("paths");
+        var unavailable = paths.GetProperty("/api/v1/auth/login").GetProperty("post").GetProperty("responses").GetProperty("503");
+        Assert.True(unavailable.GetProperty("content").TryGetProperty("application/problem+json", out _));
         var prefix = "/api/v1/seniors/{seniorId}/medical-records";
         var form = paths.GetProperty(prefix).GetProperty("post").GetProperty("requestBody").GetProperty("content").GetProperty("multipart/form-data");
         Assert.True(form.GetProperty("schema").GetProperty("properties").TryGetProperty("metadata", out _));
@@ -480,12 +536,14 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         if (!OperatingSystem.IsWindows()) Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
     }
 
-    private sealed class UnreliableStorage(IMedicalFileStorage inner, bool failSave) : IMedicalFileStorage
+    private sealed class UnreliableStorage(IMedicalFileStorage inner, bool failSave, int successfulDeletesBeforeFailure = 0) : IMedicalFileStorage
     {
+        private int deleteAttempts;
         public Task<StoredMedicalFile> SaveAsync(MedicalUploadFile upload, CancellationToken cancellationToken) => failSave
             ? throw new MedicalStorageException(new IOException("secret-storage-detail")) : inner.SaveAsync(upload, cancellationToken);
         public Task<Stream?> OpenReadAsync(string key, CancellationToken cancellationToken) => inner.OpenReadAsync(key, cancellationToken);
-        public Task DeleteAsync(string key, CancellationToken cancellationToken) => throw new MedicalStorageException(new IOException("secret-storage-detail"));
+        public Task DeleteAsync(string key, CancellationToken cancellationToken) => deleteAttempts++ < successfulDeletesBeforeFailure
+            ? inner.DeleteAsync(key, cancellationToken) : throw new MedicalStorageException(new IOException("secret-storage-detail"));
         public IAsyncEnumerable<string> FindOrphansAsync(DateTimeOffset olderThan, CancellationToken cancellationToken) => inner.FindOrphansAsync(olderThan, cancellationToken);
     }
 

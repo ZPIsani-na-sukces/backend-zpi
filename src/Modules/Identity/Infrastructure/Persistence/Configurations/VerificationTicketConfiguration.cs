@@ -22,6 +22,6 @@ internal sealed class VerificationTicketConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ConsumedAt).HasColumnName("consumed_at");
         builder.HasIndex(x => x.TokenHash).IsUnique();
         builder.Property(x => x.TokenHash).HasMaxLength(128);
-        builder.HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
     }
 }

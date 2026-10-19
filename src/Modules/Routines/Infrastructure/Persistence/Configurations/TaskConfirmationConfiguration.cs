@@ -21,6 +21,6 @@ internal sealed class TaskConfirmationConfiguration : IEntityTypeConfiguration<T
         builder.Property(x => x.ReceivedAt).HasColumnName("received_at");
         builder.Property(x => x.RecordedByAccountId).HasColumnName("recorded_by_account_id");
         builder.HasIndex(x => x.TaskOccurrenceId).IsUnique();
-        builder.HasOne<TaskOccurrence>().WithMany().HasForeignKey(x => x.TaskOccurrenceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<TaskOccurrence>().WithMany().HasForeignKey(x => x.TaskOccurrenceId).OnDelete(DeleteBehavior.Cascade);
     }
 }

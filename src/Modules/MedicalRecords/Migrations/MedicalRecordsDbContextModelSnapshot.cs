@@ -266,7 +266,7 @@ namespace Zpi.Modules.MedicalRecords.Migrations
                     b.HasOne("Zpi.Modules.MedicalRecords.Domain.MedicalRecord", null)
                         .WithMany()
                         .HasForeignKey("MedicalRecordId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

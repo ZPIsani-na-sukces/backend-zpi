@@ -13,7 +13,7 @@ internal sealed class SosTriggerReceiptConfiguration : IEntityTypeConfiguration<
         builder.Property(row => row.DeviceId).HasColumnName("device_id").ValueGeneratedNever();
         builder.Property(row => row.TriggeredAt).HasColumnName("triggered_at");
         builder.Property(row => row.IncidentId).HasColumnName("incident_id");
-        builder.HasOne<Device>().WithMany().HasForeignKey(row => row.DeviceId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<SosIncident>().WithMany().HasForeignKey(row => row.IncidentId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Device>().WithMany().HasForeignKey(row => row.DeviceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<SosIncident>().WithMany().HasForeignKey(row => row.IncidentId).OnDelete(DeleteBehavior.Cascade);
     }
 }

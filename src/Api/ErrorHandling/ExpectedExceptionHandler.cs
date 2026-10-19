@@ -6,7 +6,8 @@ using Npgsql;
 
 namespace Zpi.Api.ErrorHandling;
 
-internal sealed class ExpectedExceptionHandler(IProblemDetailsService problemDetailsService) : IExceptionHandler
+internal sealed class ExpectedExceptionHandler(IProblemDetailsService problemDetailsService,
+    ILogger<ExpectedExceptionHandler> logger) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
@@ -52,6 +53,18 @@ internal sealed class ExpectedExceptionHandler(IProblemDetailsService problemDet
                     Status = StatusCodes.Status409Conflict,
                     Detail = "A concurrent operation changed the data. Retry the request.",
                     Extensions = { ["code"] = "invalidState" }
+                };
+                break;
+            case NpgsqlException { IsTransient: true }:
+            case DbUpdateException { InnerException: NpgsqlException { IsTransient: true } }:
+            case InvalidOperationException { InnerException: NpgsqlException { IsTransient: true } }:
+                logger.LogWarning(exception, "Database temporarily unavailable. TraceId: {TraceId}", httpContext.TraceIdentifier);
+                httpContext.Response.Headers.RetryAfter = "5";
+                problem = new ProblemDetails
+                {
+                    Status = StatusCodes.Status503ServiceUnavailable,
+                    Detail = "The database is temporarily unavailable.",
+                    Extensions = { ["code"] = "temporarilyUnavailable" }
                 };
                 break;
             default:

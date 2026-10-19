@@ -42,6 +42,6 @@ internal sealed class TaskOccurrenceConfiguration : IEntityTypeConfiguration<Tas
         builder.Property(x => x.TimeZone).HasMaxLength(100);
         builder.Property(x => x.Title).HasMaxLength(150);
         builder.Property(x => x.Instructions).HasMaxLength(2000);
-        builder.HasOne<RoutineTask>().WithMany().HasForeignKey(x => x.RoutineTaskId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<RoutineTask>().WithMany().HasForeignKey(x => x.RoutineTaskId).OnDelete(DeleteBehavior.Cascade);
     }
 }

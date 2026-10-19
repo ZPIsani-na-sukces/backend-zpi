@@ -35,7 +35,7 @@ internal sealed class VerificationChallengeConfiguration : IEntityTypeConfigurat
         builder.HasIndex(x => x.AccountId);
         builder.Property(x => x.Destination).HasMaxLength(254);
         builder.Property(x => x.SecretHash).HasMaxLength(128);
-        builder.HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<VerificationTicket>().WithMany().HasForeignKey(x => x.TicketId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<VerificationTicket>().WithMany().HasForeignKey(x => x.TicketId).OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -377,12 +377,12 @@ namespace Zpi.Modules.Identity.Migrations
                     b.HasOne("Zpi.Modules.Identity.Domain.Account", null)
                         .WithMany()
                         .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("Zpi.Modules.Identity.Domain.VerificationTicket", null)
                         .WithMany()
                         .HasForeignKey("TicketId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Zpi.Modules.Identity.Domain.VerificationTicket", b =>
@@ -390,7 +390,7 @@ namespace Zpi.Modules.Identity.Migrations
                     b.HasOne("Zpi.Modules.Identity.Domain.Account", null)
                         .WithMany()
                         .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

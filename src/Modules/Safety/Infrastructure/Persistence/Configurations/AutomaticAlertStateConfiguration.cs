@@ -27,6 +27,6 @@ internal sealed class AutomaticAlertStateConfiguration : IEntityTypeConfiguratio
         builder.Property(row => row.SeniorId).ValueGeneratedNever();
         builder.Property(row => row.Version).IsConcurrencyToken();
         builder.Property(row => row.InsideZonesJson).HasColumnType("jsonb");
-        builder.HasOne<Device>().WithMany().HasForeignKey(row => row.DeviceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Device>().WithMany().HasForeignKey(row => row.DeviceId).OnDelete(DeleteBehavior.Cascade);
     }
 }

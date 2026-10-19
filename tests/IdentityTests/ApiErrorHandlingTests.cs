@@ -133,6 +133,7 @@ public sealed class ApiErrorHandlingTests
     [InlineData("not-found", 404, "resourceNotFound")]
     [InlineData("duplicate", 409, "invalidState")]
     [InlineData("database-error", 500, "internalServerError")]
+    [InlineData("unrelated-timeout", 500, "internalServerError")]
     [InlineData("serialization", 409, "invalidState")]
     [InlineData("deadlock", 409, "invalidState")]
     public async Task Errors_from_handlers_and_mvc_use_the_shared_contract(string path, int status, string code)
@@ -150,6 +151,26 @@ public sealed class ApiErrorHandlingTests
         Assert.Equal(status, body.RootElement.GetProperty("status").GetInt32());
         Assert.Equal($"/probe/{path}", body.RootElement.GetProperty("instance").GetString());
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("traceId").GetString()));
+    }
+
+    [Fact]
+    public async Task Database_connection_failure_returns_safe_unavailable_problem()
+    {
+        await using var app = await CreateApp();
+        using var client = app.GetTestClient();
+
+        foreach (var path in new[] { "database-unavailable", "database-update-unavailable", "database-query-unavailable", "database-timeout" })
+        {
+            var response = await client.GetAsync("/probe/" + path);
+
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.Equal("5", Assert.Single(response.Headers.GetValues("Retry-After")));
+            Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+            var json = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain("sensitive-database-marker", json);
+            using var body = JsonDocument.Parse(json);
+            Assert.Equal("temporarilyUnavailable", body.RootElement.GetProperty("code").GetString());
+        }
     }
 
     [Fact]
@@ -278,6 +299,23 @@ public sealed class ProbeController : ControllerBase
     [HttpGet("database-error")]
     public IActionResult ThrowDatabaseError() => throw new DbUpdateException("sensitive-database-marker",
         new PostgresException("sensitive-database-marker", "ERROR", "ERROR", PostgresErrorCodes.CheckViolation));
+
+    [HttpGet("database-unavailable")]
+    public IActionResult ThrowDatabaseUnavailable() => throw new NpgsqlException("sensitive-database-marker", new IOException());
+
+    [HttpGet("database-update-unavailable")]
+    public IActionResult ThrowDatabaseUpdateUnavailable() => throw new DbUpdateException("sensitive-database-marker",
+        new NpgsqlException("sensitive-database-marker", new IOException()));
+
+    [HttpGet("database-timeout")]
+    public IActionResult ThrowDatabaseTimeout() => throw new NpgsqlException("sensitive-database-marker", new TimeoutException());
+
+    [HttpGet("database-query-unavailable")]
+    public IActionResult ThrowDatabaseQueryUnavailable() => throw new InvalidOperationException("sensitive-database-marker",
+        new NpgsqlException("sensitive-database-marker", new TimeoutException()));
+
+    [HttpGet("unrelated-timeout")]
+    public IActionResult ThrowUnrelatedTimeout() => throw new TimeoutException("sensitive-database-marker");
 
     [HttpGet("serialization")]
     public IActionResult ThrowSerialization() => throw new InvalidOperationException("sensitive-database-marker",

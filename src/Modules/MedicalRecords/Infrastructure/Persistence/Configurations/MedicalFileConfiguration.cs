@@ -32,6 +32,6 @@ internal sealed class MedicalFileConfiguration : IEntityTypeConfiguration<Medica
         builder.Property(x => x.OriginalName).HasMaxLength(255);
         builder.Property(x => x.MimeType).HasMaxLength(100);
         builder.Property(x => x.ChecksumSha256).HasMaxLength(64);
-        builder.HasOne<MedicalRecord>().WithMany().HasForeignKey(x => x.MedicalRecordId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<MedicalRecord>().WithMany().HasForeignKey(x => x.MedicalRecordId).OnDelete(DeleteBehavior.Cascade);
     }
 }

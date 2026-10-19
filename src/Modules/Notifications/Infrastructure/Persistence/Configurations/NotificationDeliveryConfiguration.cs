@@ -33,6 +33,6 @@ internal sealed class NotificationDeliveryConfiguration : IEntityTypeConfigurati
         builder.HasIndex(x => new { x.Status, x.NextAttemptAt });
         builder.Property(x => x.ProviderMessageId).HasMaxLength(200);
         builder.Property(x => x.LastErrorCode).HasMaxLength(100);
-        builder.HasOne<Notification>().WithMany().HasForeignKey(x => x.NotificationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Notification>().WithMany().HasForeignKey(x => x.NotificationId).OnDelete(DeleteBehavior.Cascade);
     }
 }

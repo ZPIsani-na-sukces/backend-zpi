@@ -20,7 +20,6 @@ internal sealed class AccountDataCleanup(MedicalRecordsDbContext context, IMedic
         await context.MedicalAuditEntries.Where(row => row.SeniorId == accountId).ExecuteDeleteAsync(cancellationToken);
         await context.MedicalAuditEntries.Where(row => row.ActorAccountId == accountId)
             .ExecuteUpdateAsync(update => update.SetProperty(row => row.ActorAccountId, (Guid?)null), cancellationToken);
-        await context.MedicalFiles.Where(row => records.Contains(row.MedicalRecordId)).ExecuteDeleteAsync(cancellationToken);
         await context.MedicalRecords.Where(row => row.SeniorId == accountId).ExecuteDeleteAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }

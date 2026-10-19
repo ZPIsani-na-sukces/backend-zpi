@@ -25,6 +25,6 @@ internal sealed class LocationSampleConfiguration : IEntityTypeConfiguration<Loc
         builder.Property(x => x.CapturedAt).HasColumnName("captured_at");
         builder.Property(x => x.ReceivedAt).HasColumnName("received_at");
         builder.HasIndex(x => new { x.DeviceId, x.CapturedAt });
-        builder.HasOne<Device>().WithMany().HasForeignKey(x => x.DeviceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Device>().WithMany().HasForeignKey(x => x.DeviceId).OnDelete(DeleteBehavior.Cascade);
     }
 }

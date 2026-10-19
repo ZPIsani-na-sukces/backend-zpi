@@ -22,14 +22,8 @@ public sealed class AccountDeletionProcessor(IdentityDbContext context, SessionR
                 await revoker.RevokeAccountAsync(account.Id, cancellationToken);
                 foreach (var handler in cleanupHandlers)
                     await handler.DeleteAsync(account.Id, cancellationToken);
-                await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
-                await context.VerificationChallenges.Where(row => row.AccountId == account.Id ||
-                    context.VerificationTickets.Any(ticket => ticket.Id == row.TicketId && ticket.AccountId == account.Id))
-                    .ExecuteDeleteAsync(cancellationToken);
-                await context.VerificationTickets.Where(row => row.AccountId == account.Id).ExecuteDeleteAsync(cancellationToken);
                 await context.Accounts.Where(row => row.Id == account.Id && row.Status == AccountStatus.PendingDeletion &&
                     row.DeletionRequestedAt <= cutoff).ExecuteDeleteAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
