@@ -36,7 +36,7 @@ using Zpi.Shared.Pagination;
 namespace Zpi.IdentityTests;
 
 [Collection("Identity API")]
-public sealed class GeofenceTests(IdentityApiFixture fixture)
+public sealed partial class GeofenceTests(IdentityApiFixture fixture)
 {
     private const string Password = "SafetyPassword123!";
     private const string Devices = "/api/v1/me/devices";

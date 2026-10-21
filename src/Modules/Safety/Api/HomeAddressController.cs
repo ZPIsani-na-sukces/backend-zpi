@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Zpi.Modules.Safety.Application.Home;
+using Zpi.Modules.Safety.Application.Home.Detect;
 using Zpi.Modules.Safety.Application.Home.Get;
 using Zpi.Modules.Safety.Application.Home.Save;
 using Zpi.Shared.Versioning;
@@ -26,6 +27,19 @@ public sealed class HomeAddressController : SafetyController
         if (result.Failure is { } failure) return Failure(failure);
         Response.Headers.ETag = EntityTag.FromVersion(result.Value!.Version);
         return Ok(result.Value);
+    }
+
+    [HttpPost("detect")]
+    [RequestSizeLimit(16_384)]
+    [ProducesResponseType<DetectedAddressDto>(200)]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(503, "application/problem+json")]
+    public async Task<IActionResult> Detect(Guid seniorId, DetectAddressRequest request,
+        [FromServices] DetectAddressHandler handler, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await handler.Handle(AccountId(), seniorId, request, cancellationToken);
+        return result.Failure is { } failure ? Failure(failure) : Ok(result.Value);
     }
 
     [HttpPut]

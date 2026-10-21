@@ -8,5 +8,7 @@ public enum SafetyFailure
     DeviceLimitReached,
     VersionMismatch,
     ZoneLimitReached,
+    AddressNotFound,
+    GeocodingUnavailable,
     MonitoringDisabled
 }

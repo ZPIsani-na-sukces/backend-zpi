@@ -1,4 +1,5 @@
 using Zpi.Modules.Safety.Application.Alerts;
+using Zpi.Modules.Safety.Application.Home.Detect;
 using Zpi.Modules.Safety.Application.Geozones.Delete;
 using Zpi.Modules.Safety.Application.Geozones.Update;
 using Zpi.Modules.Safety.Application.Geozones.Create;
@@ -29,6 +30,7 @@ public static class SafetyApplicationSetup
 {
     public static IServiceCollection AddSafetyApplication(this IServiceCollection services)
     {
+        services.AddScoped<DetectAddressHandler>();
         services.AddScoped<GetHomeAddressHandler>();
         services.AddScoped<SaveHomeAddressHandler>();
         services.AddScoped<GetGeoZonesHandler>();

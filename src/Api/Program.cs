@@ -11,6 +11,7 @@ using Zpi.Modules.MedicalRecords;
 using Zpi.Modules.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddLocalEnvironment(builder.Environment.ContentRootPath);
 builder.Services.AddApiErrorHandling();
 builder.Services.AddApiDocumentation();
 builder.Services.AddApiCors(builder.Configuration);

@@ -21,6 +21,8 @@ public abstract class SafetyController : ControllerBase
     {
         var (status, code, detail) = failure switch
         {
+            SafetyFailure.AddressNotFound => (404, "addressNotFound", "No address was found for these coordinates."),
+            SafetyFailure.GeocodingUnavailable => (503, "temporarilyUnavailable", "The geocoding service is unavailable."),
             SafetyFailure.ResourceNotFound => (404, "resourceNotFound", "The resource was not found."),
             SafetyFailure.OperationForbidden => (403, "operationForbidden", "Your role cannot perform this operation."),
             SafetyFailure.ActiveDeviceExists => (409, "activeDeviceExists", "Another device is monitoring. Register without monitoring and switch explicitly."),
