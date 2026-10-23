@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Zpi.Modules.Identity.Application.Accounts.ChangePassword;
 using Zpi.Modules.Identity.Application.Accounts.CurrentAccount;
 using Zpi.Modules.Identity.Application.Accounts.DeleteAccount;
+using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Login;
 using Zpi.Modules.Identity.Application.Authentication.Logout;
 using Zpi.Modules.Identity.Application.Authentication.EmailVerification;
@@ -31,6 +32,7 @@ public static class IdentityApplicationSetup
         services.AddScoped<RequestPasswordResetHandler>();
         services.AddScoped<ResetPasswordHandler>();
         services.AddScoped<PasswordResetCodeVerifier>();
+        services.AddScoped<VerificationChallengeVerifier>();
         services.AddScoped<VerifyPasswordResetCodeHandler>();
         services.AddScoped<ChangePasswordHandler>();
         services.AddScoped<CurrentAccountHandler>();

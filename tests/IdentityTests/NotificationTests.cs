@@ -191,6 +191,41 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
+    public async Task Cancellation_during_push_keeps_the_claim_until_expiry_and_retries_with_the_same_key()
+    {
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
+        using var senior = await Actor(factory, AccountRole.Senior);
+        await Register(senior, Guid.CreateVersion7(), "cancel-" + Guid.CreateVersion7());
+        await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
+        var sender = factory.Services.GetRequiredService<RecordingSender>();
+        using var stopping = new CancellationTokenSource();
+        sender.BeforePush = stopping.Cancel;
+        await using (var scope = factory.Services.CreateAsyncScope())
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                scope.ServiceProvider.GetRequiredService<NotificationProcessor>().ProcessAsync(stopping.Token));
+        sender.BeforePush = null;
+        var notification = Assert.Single((await Inbox(senior)).Items);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var delivery = await scope.ServiceProvider.GetRequiredService<NotificationsDbContext>().NotificationDeliveries
+                .SingleAsync(row => row.NotificationId == notification.NotificationId && row.Channel == DeliveryChannel.Push);
+            Assert.Equal(DeliveryStatus.Pending, delivery.Status);
+            Assert.Equal(1, delivery.AttemptCount);
+            Assert.Equal(clock.GetUtcNow().AddMinutes(2), delivery.NextAttemptAt);
+            Assert.Null(delivery.LastErrorCode);
+        }
+        await Process(factory);
+        Assert.Single(sender.Push);
+        clock.Advance(TimeSpan.FromMinutes(2).Add(TimeSpan.FromSeconds(1)));
+        await Process(factory);
+        Assert.Equal(2, sender.Push.Count);
+        Assert.Equal(sender.Push[0].Key, sender.Push[1].Key);
+        Assert.Contains(Assert.Single((await Inbox(senior)).Items).Deliveries,
+            row => row.Channel == "push" && row.Status == "sent");
+    }
+
+    [PostgresFact]
     public async Task Invalid_or_expired_push_sessions_are_not_used()
     {
         var clock = new TestClock();
@@ -564,9 +599,12 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         public List<string> Sms { get; } = [];
         public int Failures { get; set; }
         public bool InvalidToken { get; set; }
+        public Action? BeforePush { get; set; }
         public Task<DeliverySendResult> SendAsync(string idempotencyKey, string token, string title, string message, Guid notificationId, CancellationToken cancellationToken)
         {
             lock (Push) Push.Add((idempotencyKey, notificationId));
+            BeforePush?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
             if (InvalidToken) return Task.FromResult(new DeliverySendResult(false, ErrorCode: "invalidToken", Retryable: false, InvalidToken: true));
             if (Failures-- > 0) return Task.FromResult(new DeliverySendResult(false, ErrorCode: "temporary"));
             return Task.FromResult(new DeliverySendResult(true, idempotencyKey));

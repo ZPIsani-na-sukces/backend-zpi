@@ -58,7 +58,7 @@ public sealed class LoginHandler(IdentityDbContext context, PasswordHashing pass
         context.VerificationChallenges
             .Where(row => row.AccountId == accountId && row.Purpose == ChallengePurpose.PhoneVerification &&
                 row.Channel == ChallengeChannel.Sms && row.ConsumedAt == null && row.InvalidatedAt == null &&
-                row.ExpiresAt > now && row.Attempts < 5 &&
+                row.ExpiresAt > now && row.Attempts < VerificationChallenge.MaximumAttempts &&
                 context.VerificationTickets.Any(ticket => ticket.Id == row.TicketId && ticket.AccountId == accountId &&
                     ticket.ConsumedAt == null && ticket.ExpiresAt > now))
             .OrderByDescending(row => row.CreatedAt)

@@ -147,6 +147,39 @@ public sealed class PhoneVerificationTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
+    public async Task Concurrent_wrong_codes_cannot_exceed_the_attempt_limit_or_unlock_the_challenge()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var registrationResponse = await client.PostAsJsonAsync("/api/v1/auth/registrations",
+            new { role = "senior", firstName = "Jan", lastName = "Kowalski", phoneNumber = Phone(), email = (string?)null, password = Password });
+        Assert.Equal(HttpStatusCode.Created, registrationResponse.StatusCode);
+        var registration = (await registrationResponse.Content.ReadFromJsonAsync<RegistrationDto>())!;
+        var challengeId = registration.PhoneChallenge.ChallengeId;
+        var code = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(challengeId);
+        var wrongCode = code == "000000" ? "000001" : "000000";
+        await using (var context = fixture.Context())
+        {
+            var challenge = await context.VerificationChallenges.SingleAsync(row => row.Id == challengeId);
+            challenge.Attempts = 4;
+            await context.SaveChangesAsync();
+        }
+        var responses = await Task.WhenAll(
+            client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm", new { challengeId, code = wrongCode }),
+            client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm", new { challengeId, code = wrongCode }));
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode));
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId, code })).StatusCode);
+        await using var verify = fixture.Context();
+        var stored = await verify.VerificationChallenges.SingleAsync(row => row.Id == challengeId);
+        Assert.Equal(5, stored.Attempts);
+        Assert.NotNull(stored.InvalidatedAt);
+        Assert.Null(stored.ConsumedAt);
+        Assert.Equal(AccountStatus.PendingPhoneVerification,
+            (await verify.Accounts.SingleAsync(row => row.Id == registration.UserId)).Status);
+    }
+
+    [PostgresFact]
     public async Task Five_wrong_codes_lock_the_challenge()
     {
         await using var factory = fixture.Factory();

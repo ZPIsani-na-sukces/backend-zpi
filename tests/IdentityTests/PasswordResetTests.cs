@@ -329,6 +329,58 @@ public sealed class PasswordResetTests(IdentityApiFixture fixture)
                 .Verify(account, OldPassword));
     }
 
+    [PostgresFact]
+    public async Task Email_verification_and_password_reset_codes_cannot_be_used_interchangeably()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var email = $"separate-codes.{phone[3..]}@example.test";
+        var registration = await Register(client, phone, email, "caretaker");
+        var phoneCode = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(registration.PhoneChallenge.ChallengeId);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneCode })).StatusCode);
+        var login = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = email, password = OldPassword, clientType = "mobile" });
+        var session = (await login.Content.ReadFromJsonAsync<SessionDto>())!;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
+        var verification = await client.PostAsync("/api/v1/auth/email-verifications", null);
+        Assert.Equal(HttpStatusCode.Accepted, verification.StatusCode);
+        var emailChallenge = (await verification.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var sender = factory.Services.GetRequiredService<TestEmailCodeSender>();
+        var emailCode = sender.CodeFor(emailChallenge.ChallengeId);
+        var reset = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel = "email", identifier = email });
+        Assert.Equal(HttpStatusCode.Accepted, reset.StatusCode);
+        var resetChallenge = (await reset.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var resetCode = sender.CodeFor(resetChallenge.ChallengeId);
+        client.DefaultRequestHeaders.Authorization = null;
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
+            new { challengeId = emailChallenge.ChallengeId, code = emailCode, newPassword = NewPassword })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/email-verifications/confirm",
+            new { challengeId = resetChallenge.ChallengeId, code = resetCode })).StatusCode);
+        await using (var context = fixture.Context())
+        {
+            var challenges = await context.VerificationChallenges
+                .Where(row => row.Id == emailChallenge.ChallengeId || row.Id == resetChallenge.ChallengeId)
+                .ToListAsync();
+            Assert.Equal(2, challenges.Count);
+            Assert.All(challenges, challenge =>
+            {
+                Assert.Equal(0, challenge.Attempts);
+                Assert.Null(challenge.ConsumedAt);
+            });
+            var account = await context.Accounts.SingleAsync(row => row.Id == registration.UserId);
+            Assert.Null(account.EmailVerifiedAt);
+            Assert.Equal(Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success,
+                factory.Services.GetRequiredService<Zpi.Modules.Identity.Infrastructure.Authentication.PasswordHashing>().Verify(account, OldPassword));
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/email-verifications/confirm",
+            new { challengeId = emailChallenge.ChallengeId, code = emailCode })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
+            new { challengeId = resetChallenge.ChallengeId, code = resetCode, newPassword = NewPassword })).StatusCode);
+    }
+
     private static async Task<RegistrationDto> Register(HttpClient client, string phone, string? email, string role)
     {
         var response = await client.PostAsJsonAsync("/api/v1/auth/registrations",

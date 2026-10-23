@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.Net.Http.Headers;
 using StackExchange.Redis;
 using Zpi.Modules.Identity.Application.Accounts.DeleteAccount;
 using Zpi.Modules.Identity.Application.Authentication;
@@ -52,7 +53,7 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         Bearer(client, first);
         var logout = await client.PostAsync("/api/v1/auth/logout", null);
         Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
-        Assert.Contains("zpi_refresh_token=", Assert.Single(logout.Headers.GetValues("Set-Cookie")));
+        AssertRefreshCookieCleared(logout);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/me")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Refresh(client, first.RefreshToken!)).StatusCode);
         var store = factory.Services.GetRequiredService<ISessionStore>();
@@ -130,9 +131,13 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         const string newPassword = "NewPass2";
         var store = factory.Services.GetRequiredService<ISessionStore>();
         var staleSession = (await store.GetAsync(Id(first), CancellationToken.None))!;
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync("/api/v1/auth/password", new { currentPassword = "wrong", newPassword })).StatusCode);
+        var rejected = await client.PutAsJsonAsync("/api/v1/auth/password", new { currentPassword = "wrong", newPassword });
+        Assert.Equal(HttpStatusCode.Unauthorized, rejected.StatusCode);
+        Assert.False(rejected.Headers.Contains("Set-Cookie"));
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/v1/me")).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/v1/auth/password", new { currentPassword = Password, newPassword })).StatusCode);
+        var changed = await client.PutAsJsonAsync("/api/v1/auth/password", new { currentPassword = Password, newPassword });
+        Assert.Equal(HttpStatusCode.NoContent, changed.StatusCode);
+        AssertRefreshCookieCleared(changed);
         await store.SaveAsync(staleSession, CancellationToken.None);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/me")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Refresh(client, first.RefreshToken!)).StatusCode);
@@ -152,9 +157,12 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         var first = await Login(client, phone);
         var second = await Login(client, phone);
         Bearer(client, first);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await Delete(client, "wrong")).StatusCode);
+        var rejected = await Delete(client, "wrong");
+        Assert.Equal(HttpStatusCode.Unauthorized, rejected.StatusCode);
+        Assert.False(rejected.Headers.Contains("Set-Cookie"));
         var response = await Delete(client, Password);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        AssertRefreshCookieCleared(response);
         var body = (await response.Content.ReadFromJsonAsync<AccountDeletionDto>())!;
         Assert.InRange((body.DeletionScheduledAt - DateTimeOffset.UtcNow).TotalDays, 29.99, 30);
         await using var context = fixture.Context();
@@ -209,6 +217,20 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         Assert.False(await verify.VerificationChallenges.AnyAsync(row => row.AccountId == dueId));
         Assert.False(await profile.SeniorContactPersons.AnyAsync(row => row.SeniorId == dueId));
         Assert.True(await profile.SeniorContactPersons.AnyAsync(row => row.SeniorId == activeId));
+    }
+
+    private static void AssertRefreshCookieCleared(HttpResponseMessage response)
+    {
+        var cookie = SetCookieHeaderValue.Parse(Assert.Single(response.Headers.GetValues("Set-Cookie")));
+        Assert.Equal("zpi_refresh_token", cookie.Name.Value);
+        Assert.Equal("", cookie.Value.Value);
+        Assert.Equal("/api/v1/auth", cookie.Path.Value);
+        Assert.True(cookie.HttpOnly);
+        Assert.True(cookie.Secure);
+        Assert.Equal(SameSiteMode.Strict, cookie.SameSite);
+        Assert.NotNull(cookie.Expires);
+        Assert.True(cookie.Expires.Value < DateTimeOffset.UtcNow);
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
     }
 
     private async Task<(Guid Id, string Phone)> ActiveAccount(HttpClient client)

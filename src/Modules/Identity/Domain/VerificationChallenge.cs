@@ -4,6 +4,8 @@ namespace Zpi.Modules.Identity.Domain;
 
 public sealed class VerificationChallenge : VersionedEntity
 {
+    public const int MaximumAttempts = 5;
+
     public Guid Id { get; set; } = Guid.CreateVersion7();
     public Guid? AccountId { get; set; }
     public Guid? TicketId { get; set; }

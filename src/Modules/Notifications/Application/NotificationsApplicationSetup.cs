@@ -5,6 +5,7 @@ using Zpi.Modules.Notifications.Application.Inbox;
 using Zpi.Modules.Notifications.Application.Inbox.Get;
 using Zpi.Modules.Notifications.Application.Inbox.List;
 using Zpi.Modules.Notifications.Application.Inbox.Read;
+using Zpi.Modules.Notifications.Application.Outbox;
 using Zpi.Modules.Notifications.Application.PushTokens.Register;
 using Zpi.Modules.Notifications.Application.PushTokens.Revoke;
 using Zpi.Modules.Notifications.Contracts;
@@ -24,6 +25,9 @@ public static class NotificationsApplicationSetup
         services.AddScoped<RevokePushTokenHandler>();
         services.AddScoped<INotificationsFacade, NotificationsFacade>();
         services.AddScoped<NotificationProcessor>();
+        services.AddScoped<NotificationOutboxProcessor>();
+        services.AddScoped<NotificationDeliveryProcessor>();
+        services.AddScoped<PushNotificationDispatcher>();
         services.AddValidatorsFromAssemblyContaining<RegisterPushTokenRequestValidator>();
         return services;
     }
