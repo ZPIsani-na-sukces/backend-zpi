@@ -1,3 +1,4 @@
+using Zpi.Domain;
 using Zpi.Modules.Care.Infrastructure.Persistence;
 using Zpi.Modules.Identity.Contracts;
 
@@ -5,12 +6,13 @@ namespace Zpi.Modules.Care.Application.Invitations.Get;
 
 public sealed class GetInvitationHandler(CareDbContext context, IIdentityFacade identity, TimeProvider time)
 {
-    public async Task<CareResult<CareInvitationDto>> Handle(GetInvitationQuery query, CancellationToken cancellationToken)
+    public async Task<CareResult<InvitationPreviewDto>> Handle(GetInvitationQuery query, CancellationToken cancellationToken)
     {
-        var invitation = await InvitationReader.FindVisibleAsync(context, query.InvitationId, query.AccountId, cancellationToken);
-        if (invitation is null) return CareResult<CareInvitationDto>.Failed(CareFailure.ResourceNotFound);
-        var accounts = await identity.GetActiveAccountsAsync([invitation.SeniorId, invitation.CaretakerId], cancellationToken);
-        return accounts.Count != 2 ? CareResult<CareInvitationDto>.Failed(CareFailure.ResourceNotFound)
-            : CareResult<CareInvitationDto>.Success(CareDtoMapper.Invitation(invitation, accounts, time.GetUtcNow()));
+        var result = await InvitationReader.FindAsync(context, identity, query.Code, query.AccountId, time.GetUtcNow(), cancellationToken);
+        if (result.Failure is { } failure) return CareResult<InvitationPreviewDto>.Failed(failure);
+        var invitation = result.Value!.Invitation;
+        var sender = result.Value.Accounts[invitation.SenderAccountId];
+        return CareResult<InvitationPreviewDto>.Success(new(new(sender.FirstName, sender.Role),
+            invitation.Status.ToCamelCase(), invitation.CreatedAt, invitation.ExpiresAt));
     }
 }

@@ -42,20 +42,6 @@ internal sealed class IdentityFacade(IdentityDbContext context, ISessionStore se
             account => new AccountSummary(account.Id, account.FirstName, account.LastName, account.Code.ToCamelCase()));
     }
 
-    public async Task<AccountSummary?> FindActiveSeniorAsync(string identifier, CancellationToken cancellationToken)
-    {
-        var normalized = identifier.Trim();
-        var email = normalized.ToUpperInvariant();
-        var account = await context.Accounts
-            .AsNoTracking()
-            .Where(user => user.Status == AccountStatus.Active && user.PhoneVerifiedAt != null &&
-                (user.NormalizedPhoneNumber == normalized || user.NormalizedEmail == email))
-            .Join(context.Roles.Where(role => role.Code == AccountRole.Senior), user => user.RoleId, role => role.Id,
-                (user, role) => new { user.Id, user.FirstName, user.LastName, role.Code })
-            .SingleOrDefaultAsync(cancellationToken);
-        return account is null ? null : new AccountSummary(account.Id, account.FirstName, account.LastName, account.Code.ToCamelCase());
-    }
-
     public async Task<IReadOnlyDictionary<Guid, AccountSummary>> GetActiveAccountsAsync(IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken)
     {
         var accounts = await context.Accounts

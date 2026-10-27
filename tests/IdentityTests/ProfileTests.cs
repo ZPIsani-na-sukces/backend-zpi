@@ -167,10 +167,10 @@ public sealed class ProfileTests(IdentityApiFixture fixture)
         await Error(await caretaker.Client.GetAsync(Preferences(caretaker.Id)), 404, "resourceNotFound");
         await Error(await otherSenior.Client.GetAsync(path), 404, "resourceNotFound");
         await Error(await senior.Client.GetAsync(Preferences(Guid.CreateVersion7())), 404, "resourceNotFound");
-        var invitationResponse = await caretaker.Client.PostAsJsonAsync("/api/v1/care-invitations", new { recipientIdentifier = senior.Phone });
+        var invitationResponse = await caretaker.Client.PostAsync("/api/v1/care-invitations", null);
         Assert.Equal(HttpStatusCode.Created, invitationResponse.StatusCode);
         var invitation = (await invitationResponse.Content.ReadFromJsonAsync<CareInvitationDto>())!;
-        var accepted = await senior.Client.PostAsync($"/api/v1/care-invitations/{invitation.InvitationId}/accept", null);
+        var accepted = await senior.Client.PostAsJsonAsync("/api/v1/care-invitations/accept", new { code = invitation.Code });
         Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
         var relationship = (await accepted.Content.ReadFromJsonAsync<CareRelationshipDto>())!;
         var preferences = await caretaker.Client.GetAsync(path);

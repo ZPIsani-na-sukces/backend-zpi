@@ -83,9 +83,11 @@ namespace Zpi.Modules.Care.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Guid>("CaretakerId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("caretaker_id");
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(6)
+                        .HasColumnType("character varying(6)")
+                        .HasColumnName("code");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -95,9 +97,13 @@ namespace Zpi.Modules.Care.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
-                    b.Property<Guid>("RecipientAccountId")
+                    b.Property<Guid?>("RecipientAccountId")
                         .HasColumnType("uuid")
                         .HasColumnName("recipient_account_id");
+
+                    b.Property<Guid?>("RelationshipId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("relationship_id");
 
                     b.Property<DateTimeOffset?>("RespondedAt")
                         .HasColumnType("timestamp with time zone")
@@ -106,10 +112,6 @@ namespace Zpi.Modules.Care.Migrations
                     b.Property<Guid>("SenderAccountId")
                         .HasColumnType("uuid")
                         .HasColumnName("sender_account_id");
-
-                    b.Property<Guid>("SeniorId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("senior_id");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -124,21 +126,29 @@ namespace Zpi.Modules.Care.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Code")
+                        .IsUnique();
+
                     b.HasIndex("ExpiresAt");
 
                     b.HasIndex("RecipientAccountId");
 
-                    b.HasIndex("SeniorId", "CaretakerId")
+                    b.HasIndex("RelationshipId")
+                        .IsUnique();
+
+                    b.HasIndex("SenderAccountId")
                         .IsUnique()
                         .HasFilter("status = 'pending'");
 
                     b.ToTable("senior_care_invitation", "care", t =>
                         {
+                            t.HasCheckConstraint("ck_senior_care_invitation_code", "code ~ '^[0-9]{6}$' AND length(code) = 6");
+
                             t.HasCheckConstraint("ck_senior_care_invitation_expiration", "expires_at > created_at");
 
-                            t.HasCheckConstraint("ck_senior_care_invitation_parties", "senior_id <> caretaker_id AND sender_account_id = caretaker_id AND recipient_account_id = senior_id");
+                            t.HasCheckConstraint("ck_senior_care_invitation_parties", "recipient_account_id IS NULL OR sender_account_id <> recipient_account_id");
 
-                            t.HasCheckConstraint("ck_senior_care_invitation_status", "status IN ('pending','accepted','rejected','cancelled','expired')");
+                            t.HasCheckConstraint("ck_senior_care_invitation_status", "(status = 'pending' AND recipient_account_id IS NULL AND responded_at IS NULL AND relationship_id IS NULL) OR (status = 'accepted' AND recipient_account_id IS NOT NULL AND responded_at IS NOT NULL AND relationship_id IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_senior_care_invitation_version", "version >= 1");
                         });
@@ -157,10 +167,6 @@ namespace Zpi.Modules.Care.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
-
-                    b.Property<Guid>("InvitationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("invitation_id");
 
                     b.Property<DateTimeOffset?>("RemovedAt")
                         .HasColumnType("timestamp with time zone")
@@ -189,9 +195,6 @@ namespace Zpi.Modules.Care.Migrations
 
                     b.HasIndex("CaretakerId");
 
-                    b.HasIndex("InvitationId")
-                        .IsUnique();
-
                     b.HasIndex("SeniorId", "CaretakerId")
                         .IsUnique()
                         .HasFilter("status = 'active'");
@@ -208,13 +211,12 @@ namespace Zpi.Modules.Care.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Zpi.Modules.Care.Domain.SeniorCareRelationship", b =>
+            modelBuilder.Entity("Zpi.Modules.Care.Domain.SeniorCareInvitation", b =>
                 {
-                    b.HasOne("Zpi.Modules.Care.Domain.SeniorCareInvitation", null)
+                    b.HasOne("Zpi.Modules.Care.Domain.SeniorCareRelationship", null)
                         .WithMany()
-                        .HasForeignKey("InvitationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .HasForeignKey("RelationshipId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 #pragma warning restore 612, 618
         }

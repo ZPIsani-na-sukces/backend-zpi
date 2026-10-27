@@ -114,6 +114,7 @@ public sealed class IdentityApiFixture : IAsyncLifetime
                 ["MedicalRecords:StorageRoot"] = medicalStorageRoot,
                 ["MedicalRecords:CleanupWorkerEnabled"] = "false",
                 ["AccountDeletion:Enabled"] = "false",
+                ["Care:CleanupWorkerEnabled"] = "false",
                 ["Routines:WorkerEnabled"] = "false",
                 ["Notifications:WorkerEnabled"] = "false",
                 ["Authentication:SigningKey"] = new string('k', 64)
@@ -140,6 +141,7 @@ public sealed class IdentityApiFixture : IAsyncLifetime
                 ["MedicalRecords:StorageRoot"] = medicalStorageRoot,
                 ["MedicalRecords:CleanupWorkerEnabled"] = "false",
                 ["AccountDeletion:Enabled"] = "false",
+                ["Care:CleanupWorkerEnabled"] = "false",
                 ["Routines:WorkerEnabled"] = "false",
                 ["Notifications:WorkerEnabled"] = "false",
                 ["Authentication:SigningKey"] = new string('k', 64)

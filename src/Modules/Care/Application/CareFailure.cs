@@ -5,6 +5,5 @@ public enum CareFailure
     ResourceNotFound,
     OperationForbidden,
     InvalidState,
-    RelationshipAlreadyExists,
-    InvitationExpired
+    RelationshipAlreadyExists
 }

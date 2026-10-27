@@ -5,7 +5,6 @@ namespace Zpi.Modules.Care.Domain;
 public sealed class SeniorCareRelationship : VersionedEntity
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
-    public Guid InvitationId { get; set; }
     public Guid SeniorId { get; set; }
     public Guid CaretakerId { get; set; }
     public RelationshipStatus Status { get; set; }

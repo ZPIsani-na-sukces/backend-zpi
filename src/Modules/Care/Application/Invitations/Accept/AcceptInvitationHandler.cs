@@ -10,42 +10,34 @@ public sealed class AcceptInvitationHandler(CareDbContext context, IIdentityFaca
 {
     public async Task<CareResult<CareRelationshipDto>> Handle(AcceptInvitationCommand command, CancellationToken cancellationToken)
     {
-        var invitation = await InvitationReader.FindVisibleAsync(context, command.InvitationId, command.AccountId, cancellationToken);
-        if (invitation is null) return CareResult<CareRelationshipDto>.Failed(CareFailure.ResourceNotFound);
-        if (invitation.RecipientAccountId != command.AccountId)
-            return CareResult<CareRelationshipDto>.Failed(CareFailure.OperationForbidden);
-        var accounts = await identity.GetActiveAccountsAsync([invitation.SeniorId, invitation.CaretakerId], cancellationToken);
-        if (accounts.Count != 2) return CareResult<CareRelationshipDto>.Failed(CareFailure.ResourceNotFound);
+        var now = time.GetUtcNow();
+        var result = await InvitationReader.FindAsync(context, identity, command.Code, command.AccountId, now, cancellationToken);
+        if (result.Failure is { } failure) return CareResult<CareRelationshipDto>.Failed(failure);
+        var invitation = result.Value!.Invitation;
+        var accounts = result.Value.Accounts;
         if (invitation.Status == InvitationStatus.Accepted)
         {
-            var existing = await context.SeniorCareRelationships.SingleAsync(relationship => relationship.InvitationId == invitation.Id, cancellationToken);
+            var existing = await context.SeniorCareRelationships.SingleAsync(row => row.Id == invitation.RelationshipId, cancellationToken);
             return CareResult<CareRelationshipDto>.Success(CareDtoMapper.Relationship(existing, accounts));
         }
-        var now = time.GetUtcNow();
-        if (invitation.Status == InvitationStatus.Expired || invitation.Status == InvitationStatus.Pending && invitation.ExpiresAt <= now)
-        {
-            invitation.Status = InvitationStatus.Expired;
-            await context.SaveChangesAsync(cancellationToken);
-            return CareResult<CareRelationshipDto>.Failed(CareFailure.InvitationExpired);
-        }
-        if (invitation.Status != InvitationStatus.Pending)
-            return CareResult<CareRelationshipDto>.Failed(CareFailure.InvalidState);
-        var active = await context.SeniorCareRelationships.FirstOrDefaultAsync(relationship => relationship.SeniorId == invitation.SeniorId &&
-            relationship.CaretakerId == invitation.CaretakerId && relationship.Status == RelationshipStatus.Active, cancellationToken);
-        if (active is not null)
-            return active.InvitationId == invitation.Id
-                ? CareResult<CareRelationshipDto>.Success(CareDtoMapper.Relationship(active, accounts))
-                : CareResult<CareRelationshipDto>.Failed(CareFailure.RelationshipAlreadyExists);
+        var senderIsSenior = accounts[invitation.SenderAccountId].Role == AccountRoles.Senior;
+        var seniorId = senderIsSenior ? invitation.SenderAccountId : command.AccountId;
+        var caretakerId = senderIsSenior ? command.AccountId : invitation.SenderAccountId;
+        if (await context.SeniorCareRelationships.AnyAsync(row => row.SeniorId == seniorId &&
+            row.CaretakerId == caretakerId && row.Status == RelationshipStatus.Active, cancellationToken))
+            return CareResult<CareRelationshipDto>.Failed(CareFailure.RelationshipAlreadyExists);
+        var respondedAt = DateTimeOffset.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds());
         var relationship = new SeniorCareRelationship
         {
-            InvitationId = invitation.Id,
-            SeniorId = invitation.SeniorId,
-            CaretakerId = invitation.CaretakerId,
+            SeniorId = seniorId,
+            CaretakerId = caretakerId,
             Status = RelationshipStatus.Active,
-            CreatedAt = now
+            CreatedAt = respondedAt
         };
         invitation.Status = InvitationStatus.Accepted;
-        invitation.RespondedAt = now;
+        invitation.RecipientAccountId = command.AccountId;
+        invitation.RelationshipId = relationship.Id;
+        invitation.RespondedAt = respondedAt;
         context.SeniorCareRelationships.Add(relationship);
         await context.SaveChangesAsync(cancellationToken);
         return CareResult<CareRelationshipDto>.Success(CareDtoMapper.Relationship(relationship, accounts));

@@ -8,11 +8,8 @@ namespace Zpi.Modules.Care.Application;
 
 internal static class CareDtoMapper
 {
-    public static CareInvitationDto Invitation(SeniorCareInvitation invitation,
-        IReadOnlyDictionary<Guid, AccountSummary> accounts, DateTimeOffset now) => new(invitation.Id,
-        accounts[invitation.SenderAccountId], accounts[invitation.RecipientAccountId],
-        (invitation.Status == InvitationStatus.Pending && invitation.ExpiresAt <= now ? InvitationStatus.Expired : invitation.Status).ToCamelCase(),
-        invitation.CreatedAt, invitation.ExpiresAt, invitation.RespondedAt);
+    public static CareInvitationDto Invitation(SeniorCareInvitation invitation) => new(invitation.Code,
+        invitation.Status.ToCamelCase(), invitation.CreatedAt, invitation.ExpiresAt);
 
     public static CareRelationshipDto Relationship(SeniorCareRelationship relationship,
         IReadOnlyDictionary<Guid, AccountSummary> accounts) => new(relationship.Id,

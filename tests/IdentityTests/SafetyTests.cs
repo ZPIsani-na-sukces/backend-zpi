@@ -349,10 +349,10 @@ public sealed class SafetyTests(IdentityApiFixture fixture)
 
     private static async Task<CareRelationshipDto> Link(TestActor senior, TestActor caretaker)
     {
-        var created = await caretaker.Client.PostAsJsonAsync("/api/v1/care-invitations", new { recipientIdentifier = senior.Phone });
+        var created = await caretaker.Client.PostAsync("/api/v1/care-invitations", null);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var invitation = (await created.Content.ReadFromJsonAsync<CareInvitationDto>())!;
-        var accepted = await senior.Client.PostAsync($"/api/v1/care-invitations/{invitation.InvitationId}/accept", null);
+        var accepted = await senior.Client.PostAsJsonAsync("/api/v1/care-invitations/accept", new { code = invitation.Code });
         Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
         return (await accepted.Content.ReadFromJsonAsync<CareRelationshipDto>())!;
     }
