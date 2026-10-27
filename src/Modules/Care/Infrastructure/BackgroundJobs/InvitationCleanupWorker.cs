@@ -10,7 +10,7 @@ internal sealed class InvitationCleanupWorker(IServiceScopeFactory scopes, TimeP
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30), clock);
+        using var timer = new PeriodicTimer(TimeSpan.FromHours(6), clock);
         do
         {
             try

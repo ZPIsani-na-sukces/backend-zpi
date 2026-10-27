@@ -47,7 +47,6 @@ internal sealed class DevelopmentDatabaseMigrationService(IServiceScopeFactory s
 
         var seniorId = Guid.Parse("019a0000-0000-7000-8000-000000000010");
         var caretakerId = Guid.Parse("019a0000-0000-7000-8000-000000000020");
-        var invitationId = Guid.Parse("019a0000-0000-7000-8000-000000000030");
         var relationshipId = Guid.Parse("019a0000-0000-7000-8000-000000000040");
         var deviceId = Guid.Parse("019a0000-0000-7000-8000-000000000050");
         var deviceInstallationId = Guid.Parse("019a0000-0000-7000-8000-000000000051");
@@ -112,25 +111,6 @@ internal sealed class DevelopmentDatabaseMigrationService(IServiceScopeFactory s
             await identityContext.SaveChangesAsync(cancellationToken);
         }
 
-        var invitation = await careContext.SeniorCareInvitations.FirstOrDefaultAsync(i => i.Id == invitationId, cancellationToken);
-        if (invitation is null)
-        {
-            invitation = new SeniorCareInvitation
-            {
-                Id = invitationId,
-                SeniorId = senior.Id,
-                CaretakerId = caretaker.Id,
-                SenderAccountId = caretaker.Id,
-                RecipientAccountId = senior.Id,
-                Status = InvitationStatus.Accepted,
-                CreatedAt = now,
-                ExpiresAt = now.AddDays(7),
-                RespondedAt = now
-            };
-            careContext.SeniorCareInvitations.Add(invitation);
-            await careContext.SaveChangesAsync(cancellationToken);
-        }
-
         var relationshipExists = await careContext.SeniorCareRelationships.AnyAsync(
             r => r.Id == relationshipId || (r.SeniorId == senior.Id && r.CaretakerId == caretaker.Id && r.Status == RelationshipStatus.Active), cancellationToken);
         if (!relationshipExists)
@@ -138,7 +118,6 @@ internal sealed class DevelopmentDatabaseMigrationService(IServiceScopeFactory s
             var relationship = new SeniorCareRelationship
             {
                 Id = relationshipId,
-                InvitationId = invitation.Id,
                 SeniorId = senior.Id,
                 CaretakerId = caretaker.Id,
                 Status = RelationshipStatus.Active,
