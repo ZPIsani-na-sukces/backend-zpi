@@ -8,10 +8,10 @@ namespace Zpi.Modules.Safety.Application.Incidents.List;
 
 public sealed class ListIncidentsHandler(IncidentReader reader, ICareFacade care, IncidentMapper mapper)
 {
-    public async Task<SafetyResult<PageDto<IncidentDto>>> Handle(ListIncidentsQuery query, CancellationToken cancellationToken)
+    public async Task<SafetyResult<CursorPageDto<IncidentDto>>> Handle(ListIncidentsQuery query, CancellationToken cancellationToken)
     {
         if (!await care.CanAccessSeniorAsync(query.AccountId, query.SeniorId, cancellationToken))
-            return SafetyResult<PageDto<IncidentDto>>.Failed(SafetyFailure.ResourceNotFound);
+            return SafetyResult<CursorPageDto<IncidentDto>>.Failed(SafetyFailure.ResourceNotFound);
         var request = query.Request;
         var rows = reader.Query(query.SeniorId);
         if (request.Type.HasValue) rows = rows.Where(row => row.Type == request.Type);
@@ -27,14 +27,10 @@ public sealed class ListIncidentsHandler(IncidentReader reader, ICareFacade care
             var to = request.To.Value.ToUniversalTime(); rows = rows
             .Where(row => row.ReceivedAt < to);
         }
-        var total = await rows
-            .CountAsync(cancellationToken);
-        var items = await rows
-            .OrderByDescending(row => row.ReceivedAt)
-            .ThenByDescending(row => row.Id)
-            .Skip((request.Page - 1) * request.Limit)
-            .Take(request.Limit)
-            .ToListAsync(cancellationToken);
-        return SafetyResult<PageDto<IncidentDto>>.Success(new PageDto<IncidentDto>(await mapper.MapAsync(items, cancellationToken), request.Page, request.Limit, total));
+        var pagination = rows.Paginate(request.Cursor, new { query.AccountId, query.SeniorId, request.Type,
+            request.Status, request.From, request.To }).OrderBy(row => row.ReceivedAt, true).OrderBy(row => row.Id, true);
+        var items = await pagination.Take(request.Limit).ToListAsync(cancellationToken);
+        return SafetyResult<CursorPageDto<IncidentDto>>.Success(new CursorPageDto<IncidentDto>(
+            await mapper.MapAsync(items.Take(request.Limit).ToList(), cancellationToken), pagination.NextCursor(items, request.Limit)));
     }
 }

@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.Safety.Application.Incidents.List;
 
-public sealed class ListIncidentsRequest : PageRequest
+public sealed class ListIncidentsRequest : CursorRequest
 {
     public IncidentType? Type { get; init; }
     public IncidentStatus? Status { get; init; }

@@ -32,7 +32,7 @@ namespace Zpi.Modules.MedicalRecords.Api;
 public sealed class MedicalRecordsController : ControllerBase
 {
     [HttpGet]
-    [ProducesResponseType<PageDto<MedicalRecordDto>>(200)]
+    [ProducesResponseType<CursorPageDto<MedicalRecordDto>>(200)]
     public async Task<IActionResult> List(Guid seniorId, [FromQuery] ListMedicalRecordsRequest request,
         [FromServices] ListMedicalRecordsHandler handler, CancellationToken cancellationToken)
     {

@@ -323,16 +323,16 @@ public sealed class SosTests(IdentityApiFixture fixture)
             var incident = (await response.Content.ReadFromJsonAsync<IncidentDto>())!;
             if (i < 2) await Status(await caretaker.Client.PostAsJsonAsync(Path(senior.Id, incident.IncidentId) + "/resolve", new { note = (string?)null }), 200);
         }
-        var first = (await caretaker.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents?limit=1"))!;
-        var second = (await caretaker.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents?limit=1&page=2"))!;
-        Assert.Equal(3, first.TotalCount);
+        var first = (await caretaker.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?limit=1"))!;
+        var second = (await caretaker.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?limit=1&cursor=" + first.NextCursor))!;
+        Assert.NotNull(first.NextCursor);
         Assert.NotEqual(first.Items[0].IncidentId, second.Items[0].IncidentId);
-        var filtered = (await senior.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents?status=resolved&type=sos"))!;
-        Assert.Equal(2, filtered.TotalCount);
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents?type=lowBattery"))!.Items);
+        var filtered = (await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?status=resolved&type=sos"))!;
+        Assert.Equal(2, filtered.Items.Count);
+        Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?type=lowBattery"))!.Items);
         var from = Uri.EscapeDataString(at.AddMinutes(-1).ToOffset(TimeSpan.FromHours(2)).ToString("O"));
         var to = Uri.EscapeDataString(at.AddMinutes(1).ToOffset(TimeSpan.FromHours(2)).ToString("O"));
-        Assert.Equal(3, (await senior.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents?from=" + from + "&to=" + to))!.TotalCount);
+        Assert.Equal(3, (await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?from=" + from + "&to=" + to))!.Items.Count);
     }
 
     [PostgresFact]
@@ -503,8 +503,8 @@ public sealed class SosTests(IdentityApiFixture fixture)
     private static string Path(Guid seniorId, Guid incidentId) => Base(seniorId) + "/incidents/" + incidentId;
     private static Task<HttpResponseMessage> Trigger(TestActor actor, Guid seniorId, TriggerSosRequest request) =>
         actor.Client.PostAsJsonAsync(Base(seniorId) + "/sos-incidents", request);
-    private static async Task<PageDto<NotificationDto>> Inbox(TestActor actor) =>
-        (await actor.Client.GetFromJsonAsync<PageDto<NotificationDto>>("/api/v1/me/notifications?type=sos"))!;
+    private static async Task<CursorPageDto<NotificationDto>> Inbox(TestActor actor) =>
+        (await actor.Client.GetFromJsonAsync<CursorPageDto<NotificationDto>>("/api/v1/me/notifications?type=sos"))!;
     private static async Task Process(WebApplicationFactory<Program> factory)
     {
         await using var scope = factory.Services.CreateAsyncScope();

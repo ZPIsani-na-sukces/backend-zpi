@@ -114,7 +114,7 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         await Process(factory);
         await Process(factory);
         var later = await Inbox(senior);
-        Assert.Equal(2, later.TotalCount);
+        Assert.Equal(2, later.Items.Count);
         Assert.Equal(2, factory.Services.GetRequiredService<RecordingSender>().Push.Count(row => row.NotificationId == first.NotificationId || later.Items.Any(item => item.NotificationId == row.NotificationId)));
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<RoutinesDbContext>();
@@ -264,8 +264,8 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         await Status(repeated, 200);
         Assert.Equal(at, (await repeated.Content.ReadFromJsonAsync<NotificationDto>())!.ReadAt);
         Assert.Empty((await Inbox(senior, "isRead=false")).Items);
-        Assert.Single((await Inbox(senior, "isRead=true&type=routineReminder&page=1&limit=1")).Items);
-        Assert.Empty((await Inbox(senior, "page=2&limit=1")).Items);
+        Assert.Single((await Inbox(senior, "isRead=true&type=routineReminder&limit=1")).Items);
+        Assert.Null((await Inbox(senior, "limit=1")).NextCursor);
         await Error(await senior.Client.GetAsync("/api/v1/me/notifications?limit=0"), 400, "validationFailed");
         await Error(await senior.Client.GetAsync("/api/v1/me/notifications?from=2026-10-15T00:00:00Z&to=2026-10-14T00:00:00Z"), 400, "validationFailed");
         var raw = await senior.Client.GetAsync("/api/v1/me/notifications/" + notification.NotificationId);
@@ -357,6 +357,29 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         var db = cleanup.ServiceProvider.GetRequiredService<RoutinesDbContext>();
         var json = JsonSerializer.Serialize(new { RecipientAccountId = senior.Id });
         Assert.False(await db.OutboxMessages.AnyAsync(row => EF.Functions.JsonContains(row.Payload, json)));
+    }
+
+    [PostgresFact]
+    public async Task Notification_cursors_traverse_equal_timestamps_without_duplicates()
+    {
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
+        using var senior = await Actor(factory, AccountRole.Senior);
+        for (var index = 0; index < 3; index++)
+            await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
+        await Process(factory);
+        var expected = await Inbox(senior);
+        Assert.Equal(3, expected.Items.Count);
+        var ids = new List<Guid>();
+        string? cursor = null;
+        do
+        {
+            var portion = await Inbox(senior, "limit=1" + (cursor is null ? "" : "&cursor=" + cursor));
+            ids.Add(Assert.Single(portion.Items).NotificationId);
+            cursor = portion.NextCursor;
+            Assert.InRange(ids.Count, 1, 3);
+        } while (cursor is not null);
+        Assert.Equal(expected.Items.Select(row => row.NotificationId), ids);
     }
 
     [PostgresFact]
@@ -552,8 +575,8 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         await Status(response, 200);
         return (await response.Content.ReadFromJsonAsync<PushTokenDto>())!;
     }
-    private static async Task<PageDto<NotificationDto>> Inbox(TestActor actor, string? query = null) =>
-        (await actor.Client.GetFromJsonAsync<PageDto<NotificationDto>>("/api/v1/me/notifications" + (query is null ? "" : "?" + query)))!;
+    private static async Task<CursorPageDto<NotificationDto>> Inbox(TestActor actor, string? query = null) =>
+        (await actor.Client.GetFromJsonAsync<CursorPageDto<NotificationDto>>("/api/v1/me/notifications" + (query is null ? "" : "?" + query)))!;
     private static async Task<Guid> SeedOccurrence(WebApplicationFactory<Program> factory, Guid seniorId, DateTimeOffset scheduledAt)
     {
         await using var scope = factory.Services.CreateAsyncScope();

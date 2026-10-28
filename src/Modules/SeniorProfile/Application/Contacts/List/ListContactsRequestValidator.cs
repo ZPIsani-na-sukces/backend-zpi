@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.SeniorProfile.Application.Contacts.List;
 
-public sealed class ListContactsRequestValidator : PageRequestValidator<ListContactsRequest>
+public sealed class ListContactsRequestValidator : CursorRequestValidator<ListContactsRequest>
 {
     public ListContactsRequestValidator()
     {

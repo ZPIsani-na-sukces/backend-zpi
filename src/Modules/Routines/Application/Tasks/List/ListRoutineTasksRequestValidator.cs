@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.Routines.Application.Tasks.List;
 
-public sealed class ListRoutineTasksRequestValidator : PageRequestValidator<ListRoutineTasksRequest>
+public sealed class ListRoutineTasksRequestValidator : CursorRequestValidator<ListRoutineTasksRequest>
 {
     public ListRoutineTasksRequestValidator()
     {

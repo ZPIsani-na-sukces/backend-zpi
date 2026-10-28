@@ -2,4 +2,4 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.Care.Application.Relationships.ListCaretakers;
 
-public sealed class ListCaretakersRequestValidator : PageRequestValidator<ListCaretakersRequest>;
+public sealed class ListCaretakersRequestValidator : CursorRequestValidator<ListCaretakersRequest>;

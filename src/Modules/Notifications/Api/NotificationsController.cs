@@ -20,7 +20,7 @@ namespace Zpi.Modules.Notifications.Api;
 public sealed class NotificationsController : ControllerBase
 {
     [HttpGet]
-    [ProducesResponseType<PageDto<NotificationDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CursorPageDto<NotificationDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> List([FromQuery] ListNotificationsRequest request, [FromServices] ListNotificationsHandler handler,
         CancellationToken cancellationToken)
     {

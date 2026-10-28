@@ -8,6 +8,6 @@ public interface IIdentityFacade
     Task<bool> IsSessionActiveAsync(Guid accountId, Guid sessionId, CancellationToken cancellationToken);
     Task<IReadOnlyDictionary<Guid, AccountSummary>> GetAccountSummariesAsync(IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken);
     Task<IReadOnlyDictionary<Guid, AccountSummary>> GetActiveAccountsAsync(IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken);
-    Task<PageDto<AccountSummary>> GetActiveAccountPageAsync(IReadOnlyCollection<Guid> accountIds, string? search,
-        int page, int limit, CancellationToken cancellationToken);
+    Task<CursorPageDto<AccountSummary>> GetActiveAccountCursorPageAsync(IReadOnlyCollection<Guid> accountIds, string? search,
+        string? cursor, int limit, string scope, CancellationToken cancellationToken);
 }

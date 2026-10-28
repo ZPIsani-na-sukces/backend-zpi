@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.Routines.Application.Occurrences.List;
 
-public sealed class ListOccurrencesRequestValidator : PageRequestValidator<ListOccurrencesRequest>
+public sealed class ListOccurrencesRequestValidator : CursorRequestValidator<ListOccurrencesRequest>
 {
     public ListOccurrencesRequestValidator(TimeProvider clock)
     {

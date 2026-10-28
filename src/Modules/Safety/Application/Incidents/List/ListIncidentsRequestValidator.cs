@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.Safety.Application.Incidents.List;
 
-public sealed class ListIncidentsRequestValidator : PageRequestValidator<ListIncidentsRequest>
+public sealed class ListIncidentsRequestValidator : CursorRequestValidator<ListIncidentsRequest>
 {
     public ListIncidentsRequestValidator()
     {

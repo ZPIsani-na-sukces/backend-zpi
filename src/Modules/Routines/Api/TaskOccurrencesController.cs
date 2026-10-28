@@ -20,13 +20,13 @@ namespace Zpi.Modules.Routines.Api;
 public sealed class TaskOccurrencesController : RoutinesController
 {
     [HttpGet]
-    [ProducesResponseType<PageDto<TaskOccurrenceDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CursorPageDto<TaskOccurrenceDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> List(Guid seniorId, [FromQuery] ListOccurrencesRequest request,
         [FromServices] ListOccurrencesHandler handler, CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
         var result = await handler.Handle(new ListOccurrencesQuery(AccountId(), seniorId, request.From!.Value,
-            request.To!.Value, request.Type, request.Status, request.TaskId, request.Page, request.Limit), cancellationToken);
+            request.To!.Value, request.Type, request.Status, request.TaskId, request.Cursor, request.Limit), cancellationToken);
         return result.Failure is { } failure ? Failure(failure) : Ok(result.Value);
     }
 

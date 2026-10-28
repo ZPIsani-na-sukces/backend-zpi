@@ -245,7 +245,7 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
         Assert.Single((await Incidents(senior)).Items);
         await Status(await Upload(senior, device.DeviceId, Gps(at.AddSeconds(120), 21), Gps(at.AddSeconds(150), 21),
             Gps(at.AddSeconds(180), 21.03), Gps(at.AddSeconds(210), 21.03)), 200);
-        Assert.Equal(2, (await Incidents(senior)).TotalCount);
+        Assert.Equal(2, (await Incidents(senior)).Items.Count);
     }
 
     [PostgresFact]
@@ -270,7 +270,7 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
             Battery(at.AddSeconds(40), 29), Battery(at.AddSeconds(50), 19)), 200);
         Assert.Single((await Incidents(senior)).Items);
         await Status(await Upload(senior, device.DeviceId, Battery(at.AddSeconds(60), 30), Battery(at.AddSeconds(70), 20)), 200);
-        Assert.Equal(2, (await Incidents(senior)).TotalCount);
+        Assert.Equal(2, (await Incidents(senior)).Items.Count);
         await Process(factory);
         Assert.Single((await Inbox(caretaker)).Items);
     }
@@ -339,10 +339,11 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
         await Status(await Upload(senior, device.DeviceId, Battery(at.AddSeconds(100), 10)), 200);
         await Status(await Trigger(senior, senior.Id, new(device.DeviceId, at.AddSeconds(110), null)), 201);
         var all = await Incidents(senior);
-        Assert.Equal(3, all.TotalCount);
+        Assert.Equal(3, all.Items.Count);
         Assert.Equal(new[] { "geofenceExit", "lowBattery", "sos" }, all.Items.Select(row => row.Type).Order());
-        var paged = (await senior.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents?page=2&limit=1"))!;
-        Assert.Equal(3, paged.TotalCount);
+        var initial = (await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?limit=1"))!;
+        var paged = (await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?cursor=" + initial.NextCursor + "&limit=1"))!;
+        Assert.NotNull(paged.NextCursor);
         Assert.Single(paged.Items);
         Assert.Equal(all.Items[1].IncidentId, paged.Items[0].IncidentId);
         foreach (var incident in all.Items)
@@ -446,8 +447,8 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
         var incident = Assert.Single((await Incidents(senior)).Items);
         Assert.Equal(at, incident.Position!.CapturedAt);
         Assert.Equal(21, incident.Position.Coordinates.Longitude);
-        Assert.Single((await senior.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents?type=lowBattery&status=open"))!.Items);
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents?type=geofenceExit"))!.Items);
+        Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?type=lowBattery&status=open"))!.Items);
+        Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents?type=geofenceExit"))!.Items);
     }
 
     [PostgresFact]
@@ -510,9 +511,9 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
         Assert.Equal(24, battery.Details.BatteryLevelPercent);
         await Status(await caretaker.Client.PostAsJsonAsync(Path(senior.Id, battery.IncidentId) + "/resolve", new { }), 200);
         await Status(await Upload(senior, device.DeviceId, Battery(now.AddSeconds(-30), 30), Battery(now.AddSeconds(-25), 24)), 200);
-        Assert.Equal(2, (await Incidents(senior)).TotalCount);
+        Assert.Equal(2, (await Incidents(senior)).Items.Count);
         await Status(await Upload(senior, device.DeviceId, Battery(now.AddSeconds(-20), 40), Battery(now.AddSeconds(-15), 24)), 200);
-        Assert.Equal(3, (await Incidents(senior)).TotalCount);
+        Assert.Equal(3, (await Incidents(senior)).Items.Count);
     }
 
     private sealed class AdjustableClock(DateTimeOffset initial) : TimeProvider
@@ -524,8 +525,8 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
     private static SaveGeoZoneRequest Zone() => new("Dom", new(52, 21), 200, true, true);
     private static TelemetrySample Gps(DateTimeOffset at, double longitude, double? accuracy = 5) => new(at, new(new(52, longitude), accuracy, null), null);
     private static TelemetrySample Battery(DateTimeOffset at, int level, bool charging = false) => new(at, null, new(level, charging));
-    private static Task<PageDto<IncidentDto>> Incidents(TestActor senior) => ReadIncidents(senior);
-    private static async Task<PageDto<IncidentDto>> ReadIncidents(TestActor senior) => (await senior.Client.GetFromJsonAsync<PageDto<IncidentDto>>(Base(senior.Id) + "/incidents"))!;
+    private static Task<CursorPageDto<IncidentDto>> Incidents(TestActor senior) => ReadIncidents(senior);
+    private static async Task<CursorPageDto<IncidentDto>> ReadIncidents(TestActor senior) => (await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents"))!;
     private static async Task<GeoZoneDto[]> Zones(TestActor senior) => (await senior.Client.GetFromJsonAsync<GeoZoneDto[]>(Base(senior.Id) + "/geozones"))!;
     private static async Task<GeoZoneDto> CreateZone(TestActor actor, Guid seniorId, SaveGeoZoneRequest request)
     {
@@ -553,8 +554,8 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
     private static string Path(Guid seniorId, Guid incidentId) => Base(seniorId) + "/incidents/" + incidentId;
     private static Task<HttpResponseMessage> Trigger(TestActor actor, Guid seniorId, TriggerSosRequest request) =>
         actor.Client.PostAsJsonAsync(Base(seniorId) + "/sos-incidents", request);
-    private static async Task<PageDto<NotificationDto>> Inbox(TestActor actor) =>
-        (await actor.Client.GetFromJsonAsync<PageDto<NotificationDto>>("/api/v1/me/notifications"))!;
+    private static async Task<CursorPageDto<NotificationDto>> Inbox(TestActor actor) =>
+        (await actor.Client.GetFromJsonAsync<CursorPageDto<NotificationDto>>("/api/v1/me/notifications"))!;
     private static async Task Process(WebApplicationFactory<Program> factory)
     {
         await using var scope = factory.Services.CreateAsyncScope();

@@ -3,7 +3,7 @@ using Zpi.Modules.Notifications.Domain;
 
 namespace Zpi.Modules.Notifications.Application.Inbox.List;
 
-public sealed class ListNotificationsRequest : PageRequest
+public sealed class ListNotificationsRequest : CursorRequest
 {
     public Guid? SeniorId { get; init; }
     public NotificationType? Type { get; init; }

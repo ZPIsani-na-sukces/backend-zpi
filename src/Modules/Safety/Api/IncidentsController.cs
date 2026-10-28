@@ -38,7 +38,7 @@ public sealed class IncidentsController : SafetyController
     }
 
     [HttpGet("incidents")]
-    [ProducesResponseType<PageDto<IncidentDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CursorPageDto<IncidentDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> List(Guid seniorId, [FromQuery] ListIncidentsRequest request, [FromServices] ListIncidentsHandler handler,
         CancellationToken cancellationToken)
     {

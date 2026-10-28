@@ -7,10 +7,10 @@ namespace Zpi.Modules.SeniorProfile.Application.Contacts.List;
 
 public sealed class ListContactsHandler(SeniorProfileDbContext context, ICareFacade care, ContactDtoMapper mapper)
 {
-    public async Task<SeniorProfileResult<PageDto<ContactDto>>> Handle(ListContactsQuery query, CancellationToken cancellationToken)
+    public async Task<SeniorProfileResult<CursorPageDto<ContactDto>>> Handle(ListContactsQuery query, CancellationToken cancellationToken)
     {
         if (!await care.CanAccessSeniorAsync(query.AccountId, query.SeniorId, cancellationToken))
-            return SeniorProfileResult<PageDto<ContactDto>>.Failed(SeniorProfileFailure.ResourceNotFound);
+            return SeniorProfileResult<CursorPageDto<ContactDto>>.Failed(SeniorProfileFailure.ResourceNotFound);
         var rows = context.SeniorContactPersons.AsNoTracking().Where(contact => contact.SeniorId == query.SeniorId &&
             contact.DeletedAt == null && contact.IsActive == query.IsActive);
         if (!string.IsNullOrWhiteSpace(query.Search))
@@ -21,11 +21,11 @@ public sealed class ListContactsHandler(SeniorProfileDbContext context, ICareFac
                 contact.LastName != null && contact.LastName.ToUpper().Contains(search) ||
                 contact.RelationshipLabel != null && contact.RelationshipLabel.ToUpper().Contains(search));
         }
-        var total = await rows.CountAsync(cancellationToken);
-        var ordered = query.Sort == "-createdAt" ? rows.OrderByDescending(contact => contact.CreatedAt).ThenByDescending(contact => contact.Id)
-            : rows.OrderBy(contact => contact.DisplayName).ThenBy(contact => contact.Id);
-        var contacts = await ordered.Skip((query.Page - 1) * query.Limit).Take(query.Limit).ToListAsync(cancellationToken);
-        return SeniorProfileResult<PageDto<ContactDto>>.Success(new PageDto<ContactDto>(
-            await mapper.MapAsync(contacts, cancellationToken), query.Page, query.Limit, total));
+        var pagination = rows.Paginate(query.Cursor, new { query.AccountId, query.SeniorId, query.Search, query.IsActive, query.Sort });
+        if (query.Sort == "-createdAt") pagination.OrderBy(contact => contact.CreatedAt, true).OrderBy(contact => contact.Id, true);
+        else pagination.OrderBy(contact => contact.DisplayName).OrderBy(contact => contact.Id);
+        var contacts = await pagination.Take(query.Limit).ToListAsync(cancellationToken);
+        return SeniorProfileResult<CursorPageDto<ContactDto>>.Success(new CursorPageDto<ContactDto>(
+            await mapper.MapAsync(contacts.Take(query.Limit).ToList(), cancellationToken), pagination.NextCursor(contacts, query.Limit)));
     }
 }

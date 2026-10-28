@@ -46,23 +46,23 @@ public sealed class ContactTests(IdentityApiFixture fixture)
         Assert.Equal("caretaker", contact.CreatedBy.Role);
         Assert.Equal(senior.Id, contact.SeniorId);
         Assert.Equal(contact, await senior.Client.GetFromJsonAsync<ContactDto>(item));
-        var active = (await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path))!;
+        var active = (await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path))!;
         Assert.Equal(contact, Assert.Single(active.Items));
-        Assert.Equal(1, active.TotalCount);
+        Assert.Single(active.Items);
         var updated = await Send(caretaker.Client, HttpMethod.Put, item, Body("Zofia", false), "\"1\"");
         Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
         Assert.Equal("\"2\"", updated.Headers.ETag!.Tag);
         var saved = (await updated.Content.ReadFromJsonAsync<ContactDto>())!;
         Assert.False(saved.IsActive);
         Assert.Equal(contact.CreatedAt, saved.CreatedAt);
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path))!.Items);
-        Assert.Equal(saved, Assert.Single((await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path + "?isActive=false"))!.Items));
+        Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path))!.Items);
+        Assert.Equal(saved, Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?isActive=false"))!.Items));
         Assert.Equal(saved, await senior.Client.GetFromJsonAsync<ContactDto>(item));
         Assert.Equal(HttpStatusCode.NoContent, (await Send(caretaker.Client, HttpMethod.Delete, item, etag: "\"2\"")).StatusCode);
         await Error(await senior.Client.GetAsync(item), 404, "resourceNotFound");
         await Error(await Send(caretaker.Client, HttpMethod.Put, item, Body("Restore"), "\"3\""), 404, "resourceNotFound");
         await Error(await Send(caretaker.Client, HttpMethod.Delete, item, etag: "\"3\""), 404, "resourceNotFound");
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path + "?isActive=false"))!.Items);
+        Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?isActive=false"))!.Items);
         await using var scope = factory.Services.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<SeniorProfileDbContext>();
         var stored = await context.SeniorContactPersons.SingleAsync(row => row.Id == contact.ContactId);
@@ -266,7 +266,7 @@ public sealed class ContactTests(IdentityApiFixture fixture)
         var contact = await Create(caretaker, senior.Id, "Anna");
         await Error(await Send(caretaker.Client, HttpMethod.Put, path + "/" + contact.ContactId, invalid[0], "\"1\""), 400, "validationFailed");
         Assert.Equal(contact, await senior.Client.GetFromJsonAsync<ContactDto>(path + "/" + contact.ContactId));
-        Assert.Equal(1, (await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path))!.TotalCount);
+        Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path))!.Items);
     }
 
     [PostgresFact]
@@ -285,22 +285,49 @@ public sealed class ContactTests(IdentityApiFixture fixture)
         var last = await Create(caretaker, senior.Id, "Anna%", label: "Rodzina");
         var inactive = await Create(caretaker, senior.Id, "Disabled", false);
         await Create(caretaker, otherSenior.Id, "Other senior");
-        var page = (await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path + "?limit=1&page=2"))!;
-        Assert.Equal(4, page.TotalCount);
-        Assert.Equal(2, page.Page);
-        Assert.Equal(1, page.Limit);
+        var initial = (await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?limit=1"))!;
+        Assert.Equal(first.ContactId, Assert.Single(initial.Items).ContactId);
+        Assert.NotNull(initial.NextCursor);
+        var page = (await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?limit=1&cursor=" + initial.NextCursor))!;
         Assert.Equal(second.ContactId, Assert.Single(page.Items).ContactId);
-        var all = (await caretaker.Client.GetFromJsonAsync<PageDto<ContactDto>>(path))!;
+        var all = (await caretaker.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path))!;
         Assert.Equal(first.ContactId, all.Items[0].ContactId);
         Assert.All(all.Items, row => Assert.Equal(senior.Id, row.SeniorId));
-        Assert.Equal(last.ContactId, Assert.Single((await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path + "?search=rodzina"))!.Items).ContactId);
-        Assert.Equal(last.ContactId, Assert.Single((await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path + "?search=%25"))!.Items).ContactId);
-        var newest = (await caretaker.Client.GetFromJsonAsync<PageDto<ContactDto>>(path + "?sort=-createdAt"))!;
+        Assert.Equal(last.ContactId, Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?search=rodzina"))!.Items).ContactId);
+        Assert.Equal(last.ContactId, Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?search=%25"))!.Items).ContactId);
+        var newest = (await caretaker.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?sort=-createdAt"))!;
         Assert.Equal(last.ContactId, newest.Items[0].ContactId);
-        Assert.Equal(inactive.ContactId, Assert.Single((await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path + "?isActive=false"))!.Items).ContactId);
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(path + "?page=100"))!.Items);
-        foreach (var query in new[] { "page=0", "page=2147483647", "limit=0", "limit=101", "sort=phoneNumber", "search=" + new string('a', 101), "isActive=abc" })
+        Assert.Equal(inactive.ContactId, Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?isActive=false"))!.Items).ContactId);
+        Assert.Null(all.NextCursor);
+        await Error(await senior.Client.GetAsync(path + "?sort=-createdAt&cursor=" + initial.NextCursor), 400, "validationFailed");
+        await Error(await otherSenior.Client.GetAsync(Contacts(otherSenior.Id) + "?cursor=" + initial.NextCursor), 400, "validationFailed");
+        foreach (var query in new[] { "cursor=invalid", "cursor=AA", "limit=0", "limit=101", "sort=phoneNumber", "search=" + new string('a', 101), "isActive=abc" })
             await Error(await caretaker.Client.GetAsync(path + "?" + query), 400, "validationFailed");
+    }
+
+    [PostgresFact]
+    public async Task Cursor_survives_deleted_anchor_and_new_contacts_before_the_boundary()
+    {
+        await using var factory = fixture.Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        await Create(caretaker, senior.Id, "A");
+        var anchor = await Create(caretaker, senior.Id, "B");
+        var tied = await Create(caretaker, senior.Id, "B");
+        var last = await Create(caretaker, senior.Id, "C");
+        var path = Contacts(senior.Id);
+        var first = (await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?limit=2"))!;
+        Assert.Equal(anchor.ContactId, first.Items[1].ContactId);
+        Assert.NotNull(first.NextCursor);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(caretaker.Client, HttpMethod.Delete,
+            path + "/" + anchor.ContactId, etag: "\"1\"")).StatusCode);
+        await Create(caretaker, senior.Id, "AA");
+        var second = (await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?cursor=" + first.NextCursor + "&limit=1"))!;
+        Assert.Equal(tied.ContactId, Assert.Single(second.Items).ContactId);
+        var third = (await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?cursor=" + second.NextCursor + "&limit=1"))!;
+        Assert.Equal(last.ContactId, Assert.Single(third.Items).ContactId);
+        Assert.Null(third.NextCursor);
     }
 
     [PostgresFact]
@@ -320,7 +347,7 @@ public sealed class ContactTests(IdentityApiFixture fixture)
         identity.Accounts.Remove(account);
         await identity.SaveChangesAsync();
         Assert.Null((await senior.Client.GetFromJsonAsync<ContactDto>(path))!.CreatedBy);
-        Assert.Null(Assert.Single((await senior.Client.GetFromJsonAsync<PageDto<ContactDto>>(Contacts(senior.Id)))!.Items).CreatedBy);
+        Assert.Null(Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(Contacts(senior.Id)))!.Items).CreatedBy);
     }
 
     [PostgresFact]

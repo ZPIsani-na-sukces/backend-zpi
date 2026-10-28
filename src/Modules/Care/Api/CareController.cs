@@ -37,6 +37,7 @@ public sealed class CareController : ControllerBase
     }
 
     [HttpGet("care-invitations/{code}")]
+    [EnableRateLimiting(CareApiSetup.InvitationCodePolicy)]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType<InvitationPreviewDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
@@ -50,6 +51,7 @@ public sealed class CareController : ControllerBase
     }
 
     [HttpPost("care-invitations/accept")]
+    [EnableRateLimiting(CareApiSetup.InvitationCodePolicy)]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [RequestSizeLimit(8_192)]
     [ProducesResponseType<CareRelationshipDto>(StatusCodes.Status200OK)]
@@ -65,21 +67,21 @@ public sealed class CareController : ControllerBase
 
     [HttpGet("me/seniors")]
     [Authorize(Roles = AccountRoles.Caretaker)]
-    [ProducesResponseType<PageDto<SeniorSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CursorPageDto<SeniorSummaryDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> ListSeniors([FromQuery] ListSeniorsRequest request,
         [FromServices] ListSeniorsHandler handler, CancellationToken cancellationToken)
     {
-        var result = await handler.Handle(new ListSeniorsQuery(AccountId(), request.Search, request.Page, request.Limit), cancellationToken);
+        var result = await handler.Handle(new ListSeniorsQuery(AccountId(), request.Search, request.Cursor, request.Limit), cancellationToken);
         return result.Failure is { } failure ? Failure(failure) : Ok(result.Value);
     }
 
     [HttpGet("seniors/{seniorId}/caretakers")]
-    [ProducesResponseType<PageDto<CareRelationshipDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CursorPageDto<CareRelationshipDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> ListCaretakers(Guid seniorId, [FromQuery] ListCaretakersRequest request,
         [FromServices] ListCaretakersHandler handler, CancellationToken cancellationToken)
     {
-        var result = await handler.Handle(new ListCaretakersQuery(AccountId(), seniorId, request.Page, request.Limit), cancellationToken);
+        var result = await handler.Handle(new ListCaretakersQuery(AccountId(), seniorId, request.Cursor, request.Limit), cancellationToken);
         return result.Failure is { } failure ? Failure(failure) : Ok(result.Value);
     }
 

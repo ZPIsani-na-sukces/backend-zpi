@@ -22,14 +22,14 @@ namespace Zpi.Modules.SeniorProfile.Api;
 public sealed class ContactsController : ControllerBase
 {
     [HttpGet]
-    [ProducesResponseType<PageDto<ContactDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CursorPageDto<ContactDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> List(Guid seniorId, [FromQuery] ListContactsRequest request,
         [FromServices] ListContactsHandler handler, CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
         var result = await handler.Handle(new ListContactsQuery(AccountId(), seniorId, request.Search, request.IsActive,
-            request.Sort, request.Page, request.Limit), cancellationToken);
+            request.Sort, request.Cursor, request.Limit), cancellationToken);
         return result.Failure is { } failure ? Failure(failure) : Ok(result.Value);
     }
 

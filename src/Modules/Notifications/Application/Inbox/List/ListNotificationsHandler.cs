@@ -5,7 +5,7 @@ namespace Zpi.Modules.Notifications.Application.Inbox.List;
 
 public sealed class ListNotificationsHandler(NotificationAccess access, NotificationMapper mapper)
 {
-    public async Task<PageDto<NotificationDto>> Handle(ListNotificationsQuery query, CancellationToken cancellationToken)
+    public async Task<CursorPageDto<NotificationDto>> Handle(ListNotificationsQuery query, CancellationToken cancellationToken)
     {
         var request = query.Request;
         var rows = (await access.VisibleAsync(query.AccountId, cancellationToken))
@@ -26,14 +26,10 @@ public sealed class ListNotificationsHandler(NotificationAccess access, Notifica
             var to = request.To.Value.ToUniversalTime(); rows = rows
             .Where(row => row.CreatedAt < to);
         }
-        var count = await rows
-            .CountAsync(cancellationToken);
-        var items = await rows
-            .OrderByDescending(row => row.CreatedAt)
-            .ThenByDescending(row => row.Id)
-            .Skip((request.Page - 1) * request.Limit)
-            .Take(request.Limit)
-            .ToListAsync(cancellationToken);
-        return new PageDto<NotificationDto>(await mapper.MapAsync(items, cancellationToken), request.Page, request.Limit, count);
+        var pagination = rows.Paginate(request.Cursor, new { query.AccountId, request.SeniorId, request.Type,
+            request.IsRead, request.From, request.To }).OrderBy(row => row.CreatedAt, true).OrderBy(row => row.Id, true);
+        var items = await pagination.Take(request.Limit).ToListAsync(cancellationToken);
+        return new CursorPageDto<NotificationDto>(await mapper.MapAsync(items.Take(request.Limit).ToList(), cancellationToken),
+            pagination.NextCursor(items, request.Limit));
     }
 }

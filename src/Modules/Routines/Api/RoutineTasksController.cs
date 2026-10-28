@@ -23,13 +23,13 @@ namespace Zpi.Modules.Routines.Api;
 public sealed class RoutineTasksController : RoutinesController
 {
     [HttpGet]
-    [ProducesResponseType<PageDto<RoutineTaskDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<CursorPageDto<RoutineTaskDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> List(Guid seniorId, [FromQuery] ListRoutineTasksRequest request,
         [FromServices] ListRoutineTasksHandler handler, CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
         var result = await handler.Handle(new ListRoutineTasksQuery(AccountId(), seniorId, request.Type, request.IsActive,
-            request.Search, request.Page, request.Limit), cancellationToken);
+            request.Search, request.Cursor, request.Limit), cancellationToken);
         return result.Failure is { } failure ? Failure(failure) : Ok(result.Value);
     }
 

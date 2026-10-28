@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.Routines.Application.Occurrences.List;
 
-public sealed class ListOccurrencesRequest : PageRequest
+public sealed class ListOccurrencesRequest : CursorRequest
 {
     public DateTimeOffset? From { get; set; }
     public DateTimeOffset? To { get; set; }

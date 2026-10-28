@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.Notifications.Application.Inbox.List;
 
-public sealed class ListNotificationsRequestValidator : PageRequestValidator<ListNotificationsRequest>
+public sealed class ListNotificationsRequestValidator : CursorRequestValidator<ListNotificationsRequest>
 {
     public ListNotificationsRequestValidator()
     {

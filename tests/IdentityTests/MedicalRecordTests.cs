@@ -219,7 +219,7 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
             form.Add(new StringContent("{broken-json"), "metadata");
             await Status(await caretaker.Client.PostAsync(Base(senior.Id), form), 400);
         }
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<MedicalRecordDto>>(Base(senior.Id)))!.Items);
+        Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id)))!.Items);
     }
 
     [PostgresFact]
@@ -250,10 +250,26 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
             using var form = Form(Metadata(title));
             await Status(await caretaker.Client.PostAsync(Base(senior.Id), form), 201);
         }
-        var page = (await senior.Client.GetFromJsonAsync<PageDto<MedicalRecordDto>>(Base(senior.Id) + "?sort=title&page=2&limit=1"))!;
-        Assert.Equal(3, page.TotalCount);
+        var initial = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id) + "?sort=title&limit=1"))!;
+        Assert.NotNull(initial.NextCursor);
+        var page = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id) + "?sort=title&cursor=" + initial.NextCursor + "&limit=1"))!;
         Assert.Equal("Beta", Assert.Single(page.Items).Title);
-        var filtered = (await senior.Client.GetFromJsonAsync<PageDto<MedicalRecordDto>>(Base(senior.Id) + "?search=alF&recordType=testResult"))!;
+        foreach (var sort in new[] { "title", "documentDate", "-documentDate", "-createdAt" })
+        {
+            var expected = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id) + "?sort=" + sort))!;
+            var ids = new List<Guid>();
+            string? cursor = null;
+            do
+            {
+                var portion = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(
+                    Base(senior.Id) + "?sort=" + sort + "&limit=1" + (cursor is null ? "" : "&cursor=" + cursor)))!;
+                ids.AddRange(portion.Items.Select(row => row.RecordId));
+                cursor = portion.NextCursor;
+                Assert.InRange(ids.Count, 1, 3);
+            } while (cursor is not null);
+            Assert.Equal(expected.Items.Select(row => row.RecordId), ids);
+        }
+        var filtered = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id) + "?search=alF&recordType=testResult"))!;
         Assert.Equal("Alfa", Assert.Single(filtered.Items).Title);
         await Status(await senior.Client.GetAsync(Base(senior.Id) + "?sort=unknown"), 400);
         await Status(await senior.Client.GetAsync(Base(senior.Id) + "?documentDateFrom=2026-10-16&documentDateTo=2026-10-15"), 400);
@@ -273,7 +289,7 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         }
         foreach (var search in new[] { "%", "_", @"\" })
         {
-            var page = (await senior.Client.GetFromJsonAsync<PageDto<MedicalRecordDto>>(Base(senior.Id) + "?search=" + Uri.EscapeDataString(search)))!;
+            var page = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id) + "?search=" + Uri.EscapeDataString(search)))!;
             Assert.Contains(search, Assert.Single(page.Items).Title);
         }
     }
@@ -397,7 +413,7 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         Assert.DoesNotContain("secret-storage-detail", raw);
         using var json = JsonDocument.Parse(raw);
         Assert.Equal("temporarilyUnavailable", json.RootElement.GetProperty("code").GetString());
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<MedicalRecordDto>>(Base(senior.Id)))!.Items);
+        Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id)))!.Items);
     }
 
     [PostgresFact]

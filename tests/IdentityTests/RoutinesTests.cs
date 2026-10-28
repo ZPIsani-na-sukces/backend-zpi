@@ -147,7 +147,7 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
         Assert.All(reactivated.Items, row => Assert.Equal(3, row.ScheduleRevision));
         await Status(await Send(caretaker.Client, HttpMethod.Delete, Tasks(senior.Id) + "/" + task.TaskId, etag: "\"3\""), 204);
         await Error(await senior.Client.GetAsync(Tasks(senior.Id) + "/" + task.TaskId), 404, "resourceNotFound");
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<RoutineTaskDto>>(Tasks(senior.Id)))!.Items);
+        Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<RoutineTaskDto>>(Tasks(senior.Id)))!.Items);
         await Status(await senior.Client.GetAsync(OccurrencePath(senior.Id, first.OccurrenceId)), 200);
         await Error(await Send(caretaker.Client, HttpMethod.Delete, Tasks(senior.Id) + "/" + task.TaskId, etag: "\"4\""), 404, "resourceNotFound");
         await using var scope = factory.Services.CreateAsyncScope();
@@ -176,7 +176,7 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
         var from = first.ScheduledAt.AddHours(-1);
         var to = first.ScheduledAt.AddHours(1);
         var path = OccurrenceRange(senior.Id, from, to) + "&status=missed";
-        Assert.Equal(first.OccurrenceId, Assert.Single((await senior.Client.GetFromJsonAsync<PageDto<TaskOccurrenceDto>>(path))!.Items).OccurrenceId);
+        Assert.Equal(first.OccurrenceId, Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<TaskOccurrenceDto>>(path))!.Items).OccurrenceId);
         var response = await Decide(senior, first, TaskDecision.Confirmed, performed);
         await Status(response, 200);
         var confirmed = (await response.Content.ReadFromJsonAsync<TaskOccurrenceDto>())!;
@@ -187,7 +187,7 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
         await Status(repeat, 200);
         Assert.Equal(confirmed.Decision, (await repeat.Content.ReadFromJsonAsync<TaskOccurrenceDto>())!.Decision);
         await Error(await Decide(senior, first, TaskDecision.Skipped, clock.GetUtcNow()), 409, "decisionAlreadyRecorded");
-        Assert.Empty((await senior.Client.GetFromJsonAsync<PageDto<TaskOccurrenceDto>>(path))!.Items);
+        Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<TaskOccurrenceDto>>(path))!.Items);
         await using var scope = factory.Services.CreateAsyncScope();
         Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<RoutinesDbContext>().TaskConfirmations.CountAsync(row => row.TaskOccurrenceId == first.OccurrenceId));
     }
@@ -366,12 +366,12 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
         foreach (var at in new[] { clock.GetUtcNow().AddDays(-31), clock.GetUtcNow().AddMinutes(6) })
             await Error(await Decide(senior, occurrence, TaskDecision.Confirmed, at), 400, "validationFailed");
         var range = OccurrenceRange(senior.Id, clock.GetUtcNow(), clock.GetUtcNow().AddDays(2));
-        foreach (var query in new[] { "page=0", "limit=101", "type=other", "status=other", "taskId=" + Guid.Empty })
+        foreach (var query in new[] { "cursor=invalid", "limit=101", "type=other", "status=other", "taskId=" + Guid.Empty })
             await Error(await senior.Client.GetAsync(range + "&" + query), 400, "validationFailed");
         await Error(await senior.Client.GetAsync($"/api/v1/seniors/{senior.Id}/task-occurrences"), 400, "validationFailed");
         await Error(await senior.Client.GetAsync(OccurrenceRange(senior.Id, clock.GetUtcNow(), clock.GetUtcNow().AddDays(31))), 400, "validationFailed");
         await Error(await senior.Client.GetAsync(OccurrenceRange(senior.Id, clock.GetUtcNow(), clock.GetUtcNow().AddDays(-1))), 400, "validationFailed");
-        Assert.Equal(1, (await senior.Client.GetFromJsonAsync<PageDto<RoutineTaskDto>>(Tasks(senior.Id)))!.TotalCount);
+        Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<RoutineTaskDto>>(Tasks(senior.Id)))!.Items);
         Assert.Equal(1, (await senior.Client.GetFromJsonAsync<RoutineTaskDto>(Tasks(senior.Id) + "/" + task.TaskId))!.Version);
     }
 
@@ -387,21 +387,23 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
         var first = await Create(caretaker, senior.Id, body with { Title = "Anna" });
         var second = await Create(caretaker, senior.Id, body with { Title = "Anna" });
         var inactive = await Create(caretaker, senior.Id, body with { Title = "Woda", Type = RoutineType.Hydration, IsActive = false });
-        var page = (await senior.Client.GetFromJsonAsync<PageDto<RoutineTaskDto>>(Tasks(senior.Id) + "?page=2&limit=1"))!;
-        Assert.Equal(3, page.TotalCount);
+        var initial = (await senior.Client.GetFromJsonAsync<CursorPageDto<RoutineTaskDto>>(Tasks(senior.Id) + "?limit=1"))!;
+        Assert.NotNull(initial.NextCursor);
+        var page = (await senior.Client.GetFromJsonAsync<CursorPageDto<RoutineTaskDto>>(Tasks(senior.Id) + "?cursor=" + initial.NextCursor + "&limit=1"))!;
         Assert.Equal(second.TaskId, Assert.Single(page.Items).TaskId);
-        Assert.Equal(inactive.TaskId, Assert.Single((await senior.Client.GetFromJsonAsync<PageDto<RoutineTaskDto>>(Tasks(senior.Id) + "?type=hydration&search=WODA&isActive=false"))!.Items).TaskId);
-        var occurrences = await Occurrences(senior, clock, "taskId=" + first.TaskId + "&page=2&limit=1");
+        Assert.Equal(inactive.TaskId, Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<RoutineTaskDto>>(Tasks(senior.Id) + "?type=hydration&search=WODA&isActive=false"))!.Items).TaskId);
+        var initialOccurrences = await Occurrences(senior, clock, "taskId=" + first.TaskId + "&limit=1");
+        var occurrences = await Occurrences(senior, clock, "taskId=" + first.TaskId + "&cursor=" + initialOccurrences.NextCursor + "&limit=1");
         var full = await Occurrences(senior, clock, "taskId=" + first.TaskId);
-        Assert.Equal(full.TotalCount, occurrences.TotalCount);
+        Assert.NotNull(initialOccurrences.NextCursor);
         Assert.Equal(full.Items[1].OccurrenceId, Assert.Single(occurrences.Items).OccurrenceId);
         var offsetRange = OccurrenceRange(senior.Id, clock.GetUtcNow().ToOffset(TimeSpan.FromHours(2)),
             clock.GetUtcNow().AddDays(2).ToOffset(TimeSpan.FromHours(2))) + "&taskId=" + first.TaskId;
-        var withOffset = (await senior.Client.GetFromJsonAsync<PageDto<TaskOccurrenceDto>>(offsetRange))!;
+        var withOffset = (await senior.Client.GetFromJsonAsync<CursorPageDto<TaskOccurrenceDto>>(offsetRange))!;
         Assert.Equal(full.Items.Select(row => row.OccurrenceId), withOffset.Items.Select(row => row.OccurrenceId));
         Assert.Empty((await Occurrences(senior, clock, "type=hydration")).Items);
         Assert.All((await Occurrences(senior, clock, "taskId=" + first.TaskId)).Items, row => Assert.Equal(first.TaskId, row.TaskId));
-        foreach (var query in new[] { "page=0", "limit=101", "type=other", "search=" + new string('a', 101) })
+        foreach (var query in new[] { "cursor=invalid", "limit=101", "type=other", "search=" + new string('a', 101) })
             await Error(await senior.Client.GetAsync(Tasks(senior.Id) + "?" + query), 400, "validationFailed");
     }
 
@@ -511,8 +513,8 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
     private static string OccurrencePath(Guid seniorId, Guid occurrenceId) => $"/api/v1/seniors/{seniorId}/task-occurrences/{occurrenceId}";
     private static string OccurrenceRange(Guid seniorId, DateTimeOffset from, DateTimeOffset to) =>
         $"/api/v1/seniors/{seniorId}/task-occurrences?from={Uri.EscapeDataString(from.ToString("O"))}&to={Uri.EscapeDataString(to.ToString("O"))}";
-    private static async Task<PageDto<TaskOccurrenceDto>> Occurrences(TestActor senior, TestClock clock, string? query = null) =>
-        (await senior.Client.GetFromJsonAsync<PageDto<TaskOccurrenceDto>>(OccurrenceRange(senior.Id, clock.GetUtcNow(), clock.GetUtcNow().AddDays(2)) + (query is null ? "" : "&" + query)))!;
+    private static async Task<CursorPageDto<TaskOccurrenceDto>> Occurrences(TestActor senior, TestClock clock, string? query = null) =>
+        (await senior.Client.GetFromJsonAsync<CursorPageDto<TaskOccurrenceDto>>(OccurrenceRange(senior.Id, clock.GetUtcNow(), clock.GetUtcNow().AddDays(2)) + (query is null ? "" : "&" + query)))!;
     private static Task<HttpResponseMessage> Decide(TestActor actor, TaskOccurrenceDto occurrence, TaskDecision decision, DateTimeOffset performed) =>
         Send(actor.Client, HttpMethod.Put, OccurrencePath(occurrence.SeniorId, occurrence.OccurrenceId) + "/decision", new RecordTaskDecisionRequest(decision, performed));
     private static async Task<RoutineTaskDto> Create(TestActor actor, Guid seniorId, SaveRoutineTaskRequest body)

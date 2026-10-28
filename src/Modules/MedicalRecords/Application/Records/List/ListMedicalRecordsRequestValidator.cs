@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.MedicalRecords.Application.Records.List;
 
-public sealed class ListMedicalRecordsRequestValidator : PageRequestValidator<ListMedicalRecordsRequest>
+public sealed class ListMedicalRecordsRequestValidator : CursorRequestValidator<ListMedicalRecordsRequest>
 {
     public ListMedicalRecordsRequestValidator()
     {

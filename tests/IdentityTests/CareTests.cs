@@ -245,6 +245,71 @@ public sealed class CareTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
+    public async Task Code_attempt_limit_is_shared_between_preview_acceptance_codes_and_sessions_but_not_accounts()
+    {
+        await using var factory = fixture.Factory();
+        using var sender = await Actor(factory, AccountRole.Caretaker);
+        using var recipient = await Actor(factory, AccountRole.Senior);
+        using var other = await Actor(factory, AccountRole.Senior);
+        var invitation = await Invite(sender);
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            using var response = attempt % 2 == 0
+                ? await recipient.Client.GetAsync($"/api/v1/care-invitations/{invitation.Code}")
+                : await recipient.Client.PostAsJsonAsync("/api/v1/care-invitations/accept", new { code = "bad-code-" + attempt });
+            Assert.Equal(attempt % 2 == 0 ? HttpStatusCode.OK : HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        var login = await recipient.Client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = recipient.Phone, password = Password, clientType = "mobile" });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var session = (await login.Content.ReadFromJsonAsync<SessionDto>())!;
+        recipient.Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
+        foreach (var response in new[]
+        {
+            await recipient.Client.GetAsync($"/api/v1/care-invitations/{invitation.Code}"),
+            await recipient.Client.PostAsJsonAsync("/api/v1/care-invitations/accept", new { code = invitation.Code })
+        })
+        {
+            await Error(response, 429, "rateLimitExceeded");
+            Assert.InRange(response.Headers.RetryAfter!.Delta!.Value.TotalSeconds, 1, 900);
+            Assert.True(response.Headers.CacheControl?.NoStore);
+        }
+        Assert.Equal(HttpStatusCode.OK, (await other.Client.GetAsync($"/api/v1/care-invitations/{invitation.Code}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await recipient.Client.GetAsync($"/api/v1/seniors/{recipient.Id}/caretakers")).StatusCode);
+        await using var context = CareContext();
+        Assert.Equal(InvitationStatus.Pending, (await context.SeniorCareInvitations.SingleAsync(row => row.Code == invitation.Code)).Status);
+    }
+
+    [PostgresFact]
+    public async Task Ip_limit_stops_code_attempts_after_switching_accounts_without_blocking_other_care_endpoints()
+    {
+        await using var factory = fixture.Factory();
+        using var sender = await Actor(factory, AccountRole.Caretaker);
+        var invitation = await Invite(sender);
+        var recipients = new List<TestActor>();
+        try
+        {
+            for (var index = 0; index < 6; index++) recipients.Add(await Actor(factory, AccountRole.Senior));
+            for (var account = 0; account < 5; account++)
+                for (var attempt = 0; attempt < 10; attempt++)
+                {
+                    using var response = await recipients[account].Client.GetAsync($"/api/v1/care-invitations/{invitation.Code}");
+                    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                }
+            var blocked = await recipients[5].Client.PostAsJsonAsync("/api/v1/care-invitations/accept", new { code = invitation.Code });
+            await Error(blocked, 429, "rateLimitExceeded");
+            Assert.InRange(blocked.Headers.RetryAfter!.Delta!.Value.TotalSeconds, 1, 900);
+            Assert.Equal(HttpStatusCode.OK, (await sender.Client.GetAsync("/api/v1/me/seniors")).StatusCode);
+            await using var context = CareContext();
+            Assert.Equal(InvitationStatus.Pending, (await context.SeniorCareInvitations.SingleAsync(row => row.Code == invitation.Code)).Status);
+        }
+        finally
+        {
+            foreach (var recipient in recipients) recipient.Dispose();
+        }
+    }
+
+    [PostgresFact]
     public async Task Generated_openapi_describes_the_code_route_and_both_generation_statuses()
     {
         await using var factory = fixture.Factory().WithWebHostBuilder(builder => builder.UseEnvironment("Development"));
@@ -266,9 +331,9 @@ public sealed class CareTests(IdentityApiFixture fixture)
     }
 
     [PostgresTheory]
-    [InlineData("/api/v1/me/seniors?page=0")]
-    [InlineData("/api/v1/me/seniors?page=-1")]
-    [InlineData("/api/v1/me/seniors?page=2147483647")]
+    [InlineData("/api/v1/me/seniors?cursor=invalid")]
+    [InlineData("/api/v1/me/seniors?cursor=%25")]
+    [InlineData("/api/v1/me/seniors?cursor=AA")]
     [InlineData("/api/v1/me/seniors?limit=0")]
     [InlineData("/api/v1/me/seniors?limit=101")]
     public async Task Invalid_relationship_pagination_uses_shared_validation(string path)
@@ -366,7 +431,7 @@ public sealed class CareTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
-    public async Task Pagination_uses_numbered_pages_and_preserves_search_filters_and_access()
+    public async Task Cursor_pagination_preserves_search_filters_and_access()
     {
         await using var factory = fixture.Factory();
         using var caretaker = await Actor(factory, AccountRole.Caretaker);
@@ -376,23 +441,24 @@ public sealed class CareTests(IdentityApiFixture fixture)
         using var third = await Actor(factory, AccountRole.Senior, "Ccc");
         foreach (var senior in new[] { third, first, second })
             await Accept(senior, (await Invite(caretaker)).Code);
-        var page = (await caretaker.Client.GetFromJsonAsync<PageDto<SeniorSummaryDto>>("/api/v1/me/seniors?limit=1"))!;
+        var page = (await caretaker.Client.GetFromJsonAsync<CursorPageDto<SeniorSummaryDto>>("/api/v1/me/seniors?limit=1"))!;
         Assert.Equal(first.Id, Assert.Single(page.Items).Senior.UserId);
-        Assert.Equal(1, page.Page);
-        Assert.Equal(1, page.Limit);
-        Assert.Equal(3, page.TotalCount);
-        var next = (await caretaker.Client.GetFromJsonAsync<PageDto<SeniorSummaryDto>>("/api/v1/me/seniors?page=2&limit=1"))!;
+        Assert.NotNull(page.NextCursor);
+        var next = (await caretaker.Client.GetFromJsonAsync<CursorPageDto<SeniorSummaryDto>>("/api/v1/me/seniors?cursor=" + page.NextCursor + "&limit=1"))!;
         Assert.Equal(second.Id, Assert.Single(next.Items).Senior.UserId);
-        Assert.Equal(3, next.TotalCount);
-        Assert.Empty((await caretaker.Client.GetFromJsonAsync<PageDto<SeniorSummaryDto>>("/api/v1/me/seniors?page=4&limit=1"))!.Items);
-        Assert.Empty((await otherCaretaker.Client.GetFromJsonAsync<PageDto<SeniorSummaryDto>>("/api/v1/me/seniors?page=2&limit=1"))!.Items);
-        var filtered = (await caretaker.Client.GetFromJsonAsync<PageDto<SeniorSummaryDto>>("/api/v1/me/seniors?search=bbb"))!;
+        Assert.NotNull(next.NextCursor);
+        var last = (await caretaker.Client.GetFromJsonAsync<CursorPageDto<SeniorSummaryDto>>("/api/v1/me/seniors?cursor=" + next.NextCursor + "&limit=1"))!;
+        Assert.Equal(third.Id, Assert.Single(last.Items).Senior.UserId);
+        Assert.Null(last.NextCursor);
+        await Error(await otherCaretaker.Client.GetAsync("/api/v1/me/seniors?cursor=" + page.NextCursor + "&limit=1"), 400, "validationFailed");
+        await Error(await caretaker.Client.GetAsync("/api/v1/me/seniors?cursor=" + page.NextCursor + "&search=bbb"), 400, "validationFailed");
+        var filtered = (await caretaker.Client.GetFromJsonAsync<CursorPageDto<SeniorSummaryDto>>("/api/v1/me/seniors?search=bbb"))!;
         Assert.Equal(second.Id, Assert.Single(filtered.Items).Senior.UserId);
-        Assert.Equal(1, filtered.TotalCount);
-        var caretakers = (await first.Client.GetFromJsonAsync<PageDto<CareRelationshipDto>>($"/api/v1/seniors/{first.Id}/caretakers?limit=1"))!;
+        Assert.Single(filtered.Items);
+        var caretakers = (await first.Client.GetFromJsonAsync<CursorPageDto<CareRelationshipDto>>($"/api/v1/seniors/{first.Id}/caretakers?limit=1"))!;
         Assert.Equal(caretaker.Id, Assert.Single(caretakers.Items).Caretaker.UserId);
-        Assert.Equal(1, caretakers.TotalCount);
-        Assert.Empty((await first.Client.GetFromJsonAsync<PageDto<CareRelationshipDto>>($"/api/v1/seniors/{first.Id}/caretakers?page=2&limit=1"))!.Items);
+        Assert.Single(caretakers.Items);
+        Assert.Null(caretakers.NextCursor);
     }
 
     private async Task<TestActor> Actor(WebApplicationFactory<Program> factory, AccountRole role, string lastName = "Kowalski")

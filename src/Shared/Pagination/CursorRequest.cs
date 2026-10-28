@@ -1,7 +1,7 @@
 namespace Zpi.Shared.Pagination;
 
-public class PageRequest
+public class CursorRequest
 {
-    public int Page { get; set; } = 1;
+    public string? Cursor { get; set; }
     public int Limit { get; set; } = 20;
 }

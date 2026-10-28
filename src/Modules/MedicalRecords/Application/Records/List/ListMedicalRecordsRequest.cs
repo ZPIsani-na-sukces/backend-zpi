@@ -3,7 +3,7 @@ using Zpi.Shared.Pagination;
 
 namespace Zpi.Modules.MedicalRecords.Application.Records.List;
 
-public sealed class ListMedicalRecordsRequest : PageRequest
+public sealed class ListMedicalRecordsRequest : CursorRequest
 {
     public string? Search { get; set; }
     public MedicalRecordType? RecordType { get; set; }

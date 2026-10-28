@@ -54,8 +54,8 @@ internal sealed class IdentityFacade(IdentityDbContext context, ISessionStore se
             account => new AccountSummary(account.Id, account.FirstName, account.LastName, account.Code.ToCamelCase()));
     }
 
-    public async Task<PageDto<AccountSummary>> GetActiveAccountPageAsync(IReadOnlyCollection<Guid> accountIds,
-        string? search, int page, int limit, CancellationToken cancellationToken)
+    public async Task<CursorPageDto<AccountSummary>> GetActiveAccountCursorPageAsync(IReadOnlyCollection<Guid> accountIds,
+        string? search, string? cursor, int limit, string scope, CancellationToken cancellationToken)
     {
         var rows = context.Accounts
             .AsNoTracking()
@@ -67,10 +67,10 @@ internal sealed class IdentityFacade(IdentityDbContext context, ISessionStore se
             var term = search.Trim().ToUpperInvariant();
             rows = rows.Where(user => user.FirstName.ToUpper().Contains(term) || user.LastName.ToUpper().Contains(term));
         }
-        var total = await rows.CountAsync(cancellationToken);
-        var accounts = await rows.OrderBy(user => user.LastName).ThenBy(user => user.FirstName).ThenBy(user => user.Id)
-            .Skip((page - 1) * limit).Take(limit).ToListAsync(cancellationToken);
-        return new PageDto<AccountSummary>(accounts.Select(account => new AccountSummary(account.Id,
-            account.FirstName, account.LastName, account.Code.ToCamelCase())).ToList(), page, limit, total);
+        var pagination = rows.Paginate(cursor, new { scope, search })
+            .OrderBy(user => user.LastName).OrderBy(user => user.FirstName).OrderBy(user => user.Id);
+        var accounts = await pagination.Take(limit).ToListAsync(cancellationToken);
+        return new CursorPageDto<AccountSummary>(accounts.Take(limit).Select(account => new AccountSummary(account.Id,
+            account.FirstName, account.LastName, account.Code.ToCamelCase())).ToList(), pagination.NextCursor(accounts, limit));
     }
 }
