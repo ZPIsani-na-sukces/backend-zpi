@@ -66,10 +66,15 @@ jobs:
           : "${COOLIFY_TOKEN:?missing COOLIFY_TOKEN}"
           : "${CF_ACCESS_CLIENT_ID:?missing CF_ACCESS_CLIENT_ID}"
           : "${CF_ACCESS_CLIENT_SECRET:?missing CF_ACCESS_CLIENT_SECRET}"
-          response=$(curl --fail-with-body -sS "$COOLIFY_WEBHOOK" \
+          uuid="${COOLIFY_WEBHOOK#*\?uuid=}"
+          uuid="${uuid%%&*}"
+          response=$(curl --fail-with-body -sS --request POST "${COOLIFY_WEBHOOK%%\?*}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
             -H "Authorization: Bearer $COOLIFY_TOKEN" \
             -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
-            -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET")
+            -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+            --data "{\"uuid\":\"$uuid\",\"force\":false}")
           echo "$response"
           deployment_uuid=$(jq -r '.deployments[0].deployment_uuid // empty' <<< "$response" 2>/dev/null || true)
           if [ -z "$deployment_uuid" ]; then
