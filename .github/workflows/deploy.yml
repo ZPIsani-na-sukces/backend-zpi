@@ -59,21 +59,39 @@ jobs:
         env:
           COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
-          response=$(curl --fail-with-body -sS "$COOLIFY_WEBHOOK" -H "Authorization: Bearer $COOLIFY_TOKEN")
+          : "${COOLIFY_WEBHOOK:?missing COOLIFY_WEBHOOK}"
+          : "${COOLIFY_TOKEN:?missing COOLIFY_TOKEN}"
+          : "${CF_ACCESS_CLIENT_ID:?missing CF_ACCESS_CLIENT_ID}"
+          : "${CF_ACCESS_CLIENT_SECRET:?missing CF_ACCESS_CLIENT_SECRET}"
+          response=$(curl --fail-with-body -sS "$COOLIFY_WEBHOOK" \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+            -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET")
           echo "$response"
-          echo "deployment_uuid=$(jq -r '.deployments[0].deployment_uuid' <<< "$response")" >> "$GITHUB_OUTPUT"
+          deployment_uuid=$(jq -r '.deployments[0].deployment_uuid // empty' <<< "$response" 2>/dev/null || true)
+          if [ -z "$deployment_uuid" ]; then
+            echo "Coolify did not return a deployment uuid (blocked by Cloudflare Access?)"
+            exit 1
+          fi
+          echo "deployment_uuid=$deployment_uuid" >> "$GITHUB_OUTPUT"
 
       - name: Wait for Coolify deployment
         env:
           COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           DEPLOYMENT_UUID: ${{ steps.trigger.outputs.deployment_uuid }}
         run: |
           base_url="${COOLIFY_WEBHOOK%%/api/*}"
           for _ in $(seq 1 60); do
             status=$(curl -sS "$base_url/api/v1/deployments/$DEPLOYMENT_UUID" \
-              -H "Authorization: Bearer $COOLIFY_TOKEN" | jq -r '.status')
+              -H "Authorization: Bearer $COOLIFY_TOKEN" \
+              -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+              -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" | jq -r '.status')
             echo "Coolify deployment status: $status"
             case "$status" in
               finished) exit 0 ;;
