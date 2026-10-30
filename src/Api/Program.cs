@@ -35,11 +35,8 @@ app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.MapScalarApiReference("/docs", options => options.WithTitle("ZPI API"));
-}
+app.MapOpenApi();
+app.MapScalarApiReference("/docs", options => options.WithTitle("ZPI API").AddServer("/"));
 app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 app.Run();
