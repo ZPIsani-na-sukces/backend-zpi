@@ -64,7 +64,7 @@ public sealed class UploadTelemetryHandler(SafetyDbContext context, ICareFacade 
                     Latitude = location.Coordinates!.Latitude,
                     Longitude = location.Coordinates.Longitude,
                     AccuracyMeters = location.AccuracyMeters,
-                    SpeedMps = location.SpeedMps,
+                    SpeedMps = location.SpeedMps >= 0 ? location.SpeedMps : null,
                     CapturedAt = sample.CapturedAt,
                     ReceivedAt = now
                 };
@@ -72,12 +72,12 @@ public sealed class UploadTelemetryHandler(SafetyDbContext context, ICareFacade 
                 addedLocations.Add(stored);
                 added = true;
             }
-            if (sample.Battery is { } battery && batteries.Add(sample.CapturedAt))
+            if (sample.Battery is { Level: >= 0 } battery && batteries.Add(sample.CapturedAt))
             {
                 var stored = new BatterySample
                 {
                     DeviceId = device.Id,
-                    BatteryLevelPercent = battery.LevelPercent,
+                    BatteryLevelPercent = (int)Math.Round(battery.Level * 100),
                     IsCharging = battery.IsCharging,
                     CapturedAt = sample.CapturedAt,
                     ReceivedAt = now
