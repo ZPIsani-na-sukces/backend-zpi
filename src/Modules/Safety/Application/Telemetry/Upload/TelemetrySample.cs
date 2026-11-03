@@ -6,4 +6,4 @@ public sealed record TelemetrySample(DateTimeOffset CapturedAt, LocationMeasurem
 
 public sealed record LocationMeasurement(CoordinatesDto? Coordinates, double? AccuracyMeters, double? SpeedMps);
 
-public sealed record BatteryMeasurement(int LevelPercent, bool IsCharging);
+public sealed record BatteryMeasurement(double Level, bool IsCharging);

@@ -43,9 +43,9 @@ public sealed class SafetyTests(IdentityApiFixture fixture)
         Assert.Null(Assert.Single((await senior.Client.GetFromJsonAsync<DeviceDto[]>(Devices))!).LatestBattery);
         var now = Now();
         Assert.Equal(HttpStatusCode.OK, (await Upload(senior, device.DeviceId,
-            Sample(now) with { Battery = new(42, true) })).StatusCode);
+            Sample(now) with { Battery = new(0.42, true) })).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await Upload(senior, device.DeviceId,
-            Sample(now.AddMinutes(-1)) with { Battery = new(75, false) },
+            Sample(now.AddMinutes(-1)) with { Battery = new(0.75, false) },
             Sample(now.AddSeconds(1)) with { Battery = null })).StatusCode);
         var latest = Assert.Single((await senior.Client.GetFromJsonAsync<DeviceDto[]>(Devices))!).LatestBattery;
         Assert.Equal(new DeviceBatteryStatusDto(42, true, now), latest);
@@ -133,27 +133,31 @@ public sealed class SafetyTests(IdentityApiFixture fixture)
         var valid = Sample(now);
         var invalid = valid with { CapturedAt = now.AddSeconds(-1), Location = new(new CoordinatesDto(91, 21), 8, 0) };
         var response = await Upload(senior, device.DeviceId, valid, valid, invalid,
-            valid with { CapturedAt = now.AddSeconds(-2), Battery = new(-1, false) },
+            valid with { CapturedAt = now.AddSeconds(-2), Battery = new(1.5, false) },
             valid with { CapturedAt = now.AddSeconds(-3), Location = new(new(52, 21), -1, null) },
             valid with { CapturedAt = now.AddSeconds(-4), Location = new(new(52, 21), null, -1) },
             valid with { CapturedAt = now.AddDays(-2) }, valid with { CapturedAt = now.AddMinutes(10) },
-            new(now, null, null), null, valid with { Location = new(null, 8, 0) });
+            new(now, null, null), null, valid with { Location = new(null, 8, 0) },
+            valid with { CapturedAt = now.AddSeconds(-5), Battery = new(-1, false) },
+            new(now.AddSeconds(-6), null, new(-1, false)));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var batch = (await response.Content.ReadFromJsonAsync<TelemetryBatchResultDto>())!;
-        Assert.Equal(new[] { "accepted", "duplicate", "rejected", "rejected", "rejected", "rejected", "rejected", "rejected", "rejected", "rejected", "rejected" },
+        Assert.Equal(new[] { "accepted", "duplicate", "rejected", "rejected", "rejected", "accepted", "rejected", "rejected", "rejected", "rejected", "rejected",
+                "accepted", "rejected" },
             batch.Results.Select(row => row.Result));
         Assert.Equal("invalidCoordinates", batch.Results[2].ErrorCode);
         Assert.Equal("invalidBattery", batch.Results[3].ErrorCode);
         Assert.Equal("invalidAccuracy", batch.Results[4].ErrorCode);
-        Assert.Equal("invalidSpeed", batch.Results[5].ErrorCode);
         Assert.Equal("invalidCapturedAt", batch.Results[6].ErrorCode);
         Assert.Equal("invalidCapturedAt", batch.Results[7].ErrorCode);
         Assert.Equal("emptySample", batch.Results[8].ErrorCode);
         Assert.Equal("invalidSample", batch.Results[9].ErrorCode);
+        Assert.Equal("emptySample", batch.Results[12].ErrorCode);
         await using var scope = factory.Services.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<SafetyDbContext>();
-        Assert.Equal(1, await context.LocationSamples.CountAsync(row => row.DeviceId == device.DeviceId));
-        Assert.Equal(1, await context.BatterySamples.CountAsync(row => row.DeviceId == device.DeviceId));
+        Assert.Equal(3, await context.LocationSamples.CountAsync(row => row.DeviceId == device.DeviceId));
+        Assert.Equal(1, await context.LocationSamples.CountAsync(row => row.DeviceId == device.DeviceId && row.SpeedMps == null));
+        Assert.Equal(2, await context.BatterySamples.CountAsync(row => row.DeviceId == device.DeviceId));
         Assert.NotNull((await context.Devices.SingleAsync(row => row.Id == device.DeviceId)).LastOnlineAt);
         var retry = await Upload(senior, device.DeviceId, valid with { CapturedAt = now.AddTicks(7) });
         Assert.Equal("duplicate", Assert.Single((await retry.Content.ReadFromJsonAsync<TelemetryBatchResultDto>())!.Results).Result);
@@ -170,7 +174,7 @@ public sealed class SafetyTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.OK, (await Upload(senior, device.DeviceId, Sample(now) with { Battery = null })).StatusCode);
         var response = await Upload(senior, device.DeviceId, Sample(now) with { Location = null });
         Assert.Equal("accepted", Assert.Single((await response.Content.ReadFromJsonAsync<TelemetryBatchResultDto>())!.Results).Result);
-        response = await Upload(senior, device.DeviceId, Sample(now) with { Location = new(new(0, 0), null, null), Battery = new(10, true) });
+        response = await Upload(senior, device.DeviceId, Sample(now) with { Location = new(new(0, 0), null, null), Battery = new(0.1, true) });
         Assert.Equal("duplicate", Assert.Single((await response.Content.ReadFromJsonAsync<TelemetryBatchResultDto>())!.Results).Result);
         var latest = (await senior.Client.GetFromJsonAsync<LatestLocationDto>(Location(senior.Id)))!;
         Assert.Equal(new CoordinatesDto(52.2297, 21.0122), latest.Coordinates);
@@ -367,7 +371,7 @@ public sealed class SafetyTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<DeviceDto>())!;
     }
-    private static TelemetrySample Sample(DateTimeOffset at) => new(at, new(new(52.2297, 21.0122), 8.5, 0), new(75, false));
+    private static TelemetrySample Sample(DateTimeOffset at) => new(at, new(new(52.2297, 21.0122), 8.5, 0), new(0.75, false));
     private static Task<HttpResponseMessage> Upload(TestActor actor, Guid deviceId, params TelemetrySample?[] samples) =>
         actor.Client.PostAsJsonAsync($"{Devices}/{deviceId}/telemetry", new UploadTelemetryRequest(samples));
     private static async Task Error(HttpResponseMessage response, int status, string code)

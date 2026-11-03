@@ -524,7 +524,7 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
 
     private static SaveGeoZoneRequest Zone() => new("Dom", new(52, 21), 200, true, true);
     private static TelemetrySample Gps(DateTimeOffset at, double longitude, double? accuracy = 5) => new(at, new(new(52, longitude), accuracy, null), null);
-    private static TelemetrySample Battery(DateTimeOffset at, int level, bool charging = false) => new(at, null, new(level, charging));
+    private static TelemetrySample Battery(DateTimeOffset at, int percent, bool charging = false) => new(at, null, new(percent / 100.0, charging));
     private static Task<CursorPageDto<IncidentDto>> Incidents(TestActor senior) => ReadIncidents(senior);
     private static async Task<CursorPageDto<IncidentDto>> ReadIncidents(TestActor senior) => (await senior.Client.GetFromJsonAsync<CursorPageDto<IncidentDto>>(Base(senior.Id) + "/incidents"))!;
     private static async Task<GeoZoneDto[]> Zones(TestActor senior) => (await senior.Client.GetFromJsonAsync<GeoZoneDto[]>(Base(senior.Id) + "/geozones"))!;
@@ -621,7 +621,7 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<DeviceDto>())!;
     }
-    private static TelemetrySample Sample(DateTimeOffset at) => new(at, new(new(52.2297, 21.0122), 8.5, 0), new(75, false));
+    private static TelemetrySample Sample(DateTimeOffset at) => new(at, new(new(52.2297, 21.0122), 8.5, 0), new(0.75, false));
     private static Task<HttpResponseMessage> Upload(TestActor actor, Guid deviceId, params TelemetrySample?[] samples) =>
         actor.Client.PostAsJsonAsync($"{Devices}/{deviceId}/telemetry", new UploadTelemetryRequest(samples));
     private static async Task Error(HttpResponseMessage response, int status, string code)
