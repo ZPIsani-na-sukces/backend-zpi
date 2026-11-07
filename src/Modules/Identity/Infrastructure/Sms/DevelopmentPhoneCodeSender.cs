@@ -7,9 +7,9 @@ public sealed class DevelopmentPhoneCodeSender(ILogger<DevelopmentPhoneCodeSende
 {
     public bool IsAvailable => true;
 
-    public Task SendAsync(Guid challengeId, string phoneNumber, string code, CancellationToken cancellationToken)
+    public Task<PhoneCodeDelivery> SendAsync(Guid challengeId, string phoneNumber, string code, CancellationToken cancellationToken)
     {
         logger.LogInformation("Development SMS for {PhoneNumber}, challenge {ChallengeId}: {Code}", phoneNumber, challengeId, code);
-        return Task.CompletedTask;
+        return Task.FromResult(PhoneCodeDelivery.Sent);
     }
 }

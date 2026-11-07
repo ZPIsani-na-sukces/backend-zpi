@@ -19,6 +19,12 @@ internal static class AuthenticationFailureResponses
                 extensions["phoneChallenge"] = result.Verification.PhoneChallenge;
             return controller.Problem(statusCode: 403, detail: "Verify your phone number before signing in.", extensions: extensions);
         }
+        if (result.Failure == AuthenticationFailure.InvalidPhoneNumber)
+            return controller.Problem(statusCode: 400, detail: "Invalid request data.", extensions: new Dictionary<string, object?>
+            {
+                ["code"] = "validationFailed",
+                ["errors"] = new Dictionary<string, string[]> { ["phoneNumber"] = ["This phone number cannot receive SMS messages."] }
+            });
         if (result.Failure == AuthenticationFailure.ResendCooldown)
         {
             var seconds = Math.Max(1, (int)Math.Ceiling(result.RetryAfter!.Value.TotalSeconds));

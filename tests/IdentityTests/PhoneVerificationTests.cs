@@ -4,6 +4,8 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Zpi.Modules.Identity.Application.Accounts.UnverifiedAccountCleanup;
+using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
@@ -200,5 +202,108 @@ public sealed class PhoneVerificationTests(IdentityApiFixture fixture)
         Assert.NotNull(challenge.InvalidatedAt);
         Assert.Equal(AccountStatus.PendingPhoneVerification,
             (await context.Accounts.SingleAsync(row => row.Id == registration.UserId)).Status);
+    }
+
+    [PostgresTheory]
+    [InlineData(PhoneCodeDelivery.InvalidPhoneNumber, HttpStatusCode.BadRequest, "validationFailed")]
+    [InlineData(PhoneCodeDelivery.Unavailable, HttpStatusCode.ServiceUnavailable, "deliveryUnavailable")]
+    public async Task Registration_whose_sms_fails_is_not_saved_and_can_be_retried(PhoneCodeDelivery delivery,
+        HttpStatusCode status, string code)
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var sender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+        var phone = Phone();
+        var email = Guid.CreateVersion7() + "@example.com";
+        var request = new { role = "caretaker", firstName = "Anna", lastName = "Nowak", phoneNumber = phone, email, password = Password };
+        sender.Respond(phone, delivery);
+
+        var failed = await client.PostAsJsonAsync("/api/v1/auth/registrations", request);
+        Assert.Equal(status, failed.StatusCode);
+        using (var body = await JsonDocument.ParseAsync(await failed.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
+            var hasPhoneError = body.RootElement.TryGetProperty("errors", out var errors) &&
+                errors.ValueKind == JsonValueKind.Object && errors.TryGetProperty("phoneNumber", out _);
+            Assert.Equal(delivery == PhoneCodeDelivery.InvalidPhoneNumber, hasPhoneError);
+        }
+        await using (var context = fixture.Context())
+        {
+            Assert.False(await context.Accounts.AnyAsync(row =>
+                row.NormalizedPhoneNumber == phone || row.NormalizedEmail == email.ToUpperInvariant()));
+            Assert.False(await context.VerificationChallenges.AnyAsync(row => row.Destination == phone));
+        }
+
+        sender.Respond(phone, PhoneCodeDelivery.Sent);
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync("/api/v1/auth/registrations", request)).StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Resend_whose_sms_fails_keeps_the_previous_code_valid()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var sender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+        var phone = Phone();
+        var registrationResponse = await client.PostAsJsonAsync("/api/v1/auth/registrations",
+            new { role = "senior", firstName = "Jan", lastName = "Kowalski", phoneNumber = phone, email = (string?)null, password = Password });
+        var registration = (await registrationResponse.Content.ReadFromJsonAsync<RegistrationDto>())!;
+        var challengeId = registration.PhoneChallenge.ChallengeId;
+        await using (var context = fixture.Context())
+        {
+            var challenge = await context.VerificationChallenges.SingleAsync(row => row.Id == challengeId);
+            challenge.ResendAfter = DateTimeOffset.UtcNow.AddSeconds(-1);
+            await context.SaveChangesAsync();
+        }
+        sender.Respond(phone, PhoneCodeDelivery.Unavailable);
+
+        var resend = await client.PostAsJsonAsync("/api/v1/auth/phone-verifications",
+            new { verificationTicket = registration.VerificationTicket });
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, resend.StatusCode);
+        await using (var context = fixture.Context())
+        {
+            var remaining = Assert.Single(await context.VerificationChallenges
+                .Where(row => row.AccountId == registration.UserId).ToListAsync());
+            Assert.Equal(challengeId, remaining.Id);
+            Assert.Null(remaining.InvalidatedAt);
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId, code = sender.CodeFor(challengeId) })).StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Cleanup_deletes_only_accounts_left_unverified_for_a_day_and_frees_their_phone_number()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var sender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+        object Registration(string phone) =>
+            new { role = "senior", firstName = "Jan", lastName = "Kowalski", phoneNumber = phone, email = (string?)null, password = Password };
+        async Task<RegistrationDto> Register(string phone) =>
+            (await (await client.PostAsJsonAsync("/api/v1/auth/registrations", Registration(phone))).Content.ReadFromJsonAsync<RegistrationDto>())!;
+        var stalePhone = Phone();
+        var stale = await Register(stalePhone);
+        var fresh = await Register(Phone());
+        var verified = await Register(Phone());
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = verified.PhoneChallenge.ChallengeId, code = sender.CodeFor(verified.PhoneChallenge.ChallengeId) })).StatusCode);
+        var longAgo = DateTimeOffset.UtcNow - UnverifiedAccountCleanupProcessor.MaximumAge - TimeSpan.FromMinutes(1);
+        await using (var context = fixture.Context())
+            await context.Accounts.Where(row => row.Id == stale.UserId || row.Id == verified.UserId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.CreatedAt, longAgo));
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<UnverifiedAccountCleanupProcessor>().ProcessAsync(CancellationToken.None);
+
+        await using (var context = fixture.Context())
+        {
+            Assert.False(await context.Accounts.AnyAsync(row => row.Id == stale.UserId));
+            Assert.False(await context.VerificationTickets.AnyAsync(row => row.AccountId == stale.UserId));
+            Assert.False(await context.VerificationChallenges.AnyAsync(row => row.AccountId == stale.UserId));
+            Assert.True(await context.Accounts.AnyAsync(row => row.Id == fresh.UserId));
+            Assert.True(await context.Accounts.AnyAsync(row => row.Id == verified.UserId));
+        }
+        Assert.Equal(HttpStatusCode.Created,
+            (await client.PostAsJsonAsync("/api/v1/auth/registrations", Registration(stalePhone))).StatusCode);
     }
 }

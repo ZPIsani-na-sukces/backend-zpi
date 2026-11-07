@@ -40,8 +40,21 @@ public sealed class RegisterHandler(IdentityDbContext context, PasswordHashing p
         var (challenge, code) = VerificationChallengeFactory.Create(account, ChallengePurpose.PhoneVerification,
             ChallengeChannel.Sms, phone, passwords, now, ticket);
         context.VerificationChallenges.Add(challenge);
+        
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        
         await context.SaveChangesAsync(cancellationToken);
-        await sender.SendAsync(challenge.Id, phone, code, cancellationToken);
+        
+        var delivery = await sender.SendAsync(challenge.Id, phone, code, cancellationToken);
+        if (delivery != PhoneCodeDelivery.Sent)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return AuthenticationResult<RegistrationDto>.Failed(delivery == PhoneCodeDelivery.InvalidPhoneNumber
+                ? AuthenticationFailure.InvalidPhoneNumber : AuthenticationFailure.DeliveryUnavailable);
+        }
+        
+        await transaction.CommitAsync(CancellationToken.None);
+
         return AuthenticationResult<RegistrationDto>.Success(new RegistrationDto(account.Id, "pendingPhoneVerification",
             secret, ticket.ExpiresAt, new ChallengeDto(challenge.Id, "sms", challenge.ExpiresAt, challenge.ResendAfter)));
     }

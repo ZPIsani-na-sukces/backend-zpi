@@ -21,16 +21,11 @@ public static class IdentityModule
     public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         services.AddSingleton<TimeProvider>(new PostgresTimeProvider());
+        services.AddIdentitySms(configuration);
         if (environment.IsDevelopment())
-        {
-            services.AddSingleton<IPhoneCodeSender, DevelopmentPhoneCodeSender>();
             services.AddSingleton<IEmailCodeSender, DevelopmentEmailCodeSender>();
-        }
         else
-        {
-            services.AddSingleton<IPhoneCodeSender, UnavailablePhoneCodeSender>();
             services.AddSingleton<IEmailCodeSender, UnavailableEmailCodeSender>();
-        }
         services.AddScoped<IIdentityFacade, IdentityFacade>();
         services.AddIdentityApplication();
         services.AddIdentityApi();

@@ -31,6 +31,9 @@ public sealed class StartPhoneVerificationHandler(IdentityDbContext context, Pas
         var (next, code) = VerificationChallengeFactory.Create(account, ChallengePurpose.PhoneVerification,
             ChallengeChannel.Sms, account.PhoneNumber, passwords, now, ticket);
         context.VerificationChallenges.Add(next);
+
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        
         try
         {
             await context.SaveChangesAsync(cancellationToken);
@@ -39,7 +42,17 @@ public sealed class StartPhoneVerificationHandler(IdentityDbContext context, Pas
         {
             return AuthenticationResult<ChallengeDto>.Failed(AuthenticationFailure.InvalidState);
         }
-        await sender.SendAsync(next.Id, account.PhoneNumber, code, cancellationToken);
+        
+        var delivery = await sender.SendAsync(next.Id, account.PhoneNumber, code, cancellationToken);
+        if (delivery != PhoneCodeDelivery.Sent)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return AuthenticationResult<ChallengeDto>.Failed(delivery == PhoneCodeDelivery.InvalidPhoneNumber
+                ? AuthenticationFailure.InvalidPhoneNumber : AuthenticationFailure.DeliveryUnavailable);
+        }
+        
+        await transaction.CommitAsync(CancellationToken.None);
+
         return AuthenticationResult<ChallengeDto>.Success(new ChallengeDto(next.Id, "sms", next.ExpiresAt, next.ResendAfter));
     }
 }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Zpi.Modules.Identity.Application.Accounts.ChangePassword;
 using Zpi.Modules.Identity.Application.Accounts.CurrentAccount;
 using Zpi.Modules.Identity.Application.Accounts.DeleteAccount;
+using Zpi.Modules.Identity.Application.Accounts.UnverifiedAccountCleanup;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Login;
 using Zpi.Modules.Identity.Application.Authentication.Logout;
@@ -41,6 +42,7 @@ public static class IdentityApplicationSetup
         services.AddScoped<DeleteAccountHandler>();
         services.AddScoped<SessionRevoker>();
         services.AddScoped<AccountDeletionProcessor>();
+        services.AddScoped<UnverifiedAccountCleanupProcessor>();
         services.AddValidatorsFromAssemblyContaining<RegisterCommandValidator>();
         return services;
     }
