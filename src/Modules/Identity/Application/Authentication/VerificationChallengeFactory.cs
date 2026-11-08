@@ -9,11 +9,11 @@ internal static class VerificationChallengeFactory
 {
     public static (VerificationChallenge Challenge, string Code) Create(Account account, ChallengePurpose purpose,
         ChallengeChannel channel, string destination, PasswordHashing passwords, DateTimeOffset now,
-        VerificationTicket? ticket = null)
+        VerificationTicket? ticket = null, string? fixedCode = null)
     {
-        var code = channel == ChallengeChannel.Sms
+        var code = fixedCode ?? (channel == ChallengeChannel.Sms
             ? RandomNumberGenerator.GetInt32(1_000_000).ToString("D6", CultureInfo.InvariantCulture)
-            : TokenService.CreateSecret();
+            : TokenService.CreateSecret());
         return (new VerificationChallenge
         {
             AccountId = account.Id,

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Zpi.Modules.Identity.Application.Accounts.DeleteAccount;
+using Zpi.Modules.Identity.Application.Accounts.UnverifiedAccountCleanup;
 
 namespace Zpi.Modules.Identity.Infrastructure.BackgroundJobs;
 
@@ -15,6 +16,7 @@ internal sealed class AccountDeletionWorker(IServiceScopeFactory scopes, TimePro
             try
             {
                 await using var scope = scopes.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<UnverifiedAccountCleanupProcessor>().ProcessAsync(stoppingToken);
                 await scope.ServiceProvider.GetRequiredService<AccountDeletionProcessor>().ProcessAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

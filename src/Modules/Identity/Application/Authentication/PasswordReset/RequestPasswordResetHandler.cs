@@ -42,7 +42,7 @@ public sealed class RequestPasswordResetHandler(IdentityDbContext context, Passw
             return AuthenticationResult<ChallengeDto>.Success(PublicResponse(command.Channel, now));
         }
         if (command.Channel == ChallengeChannel.Sms)
-            await phoneSender.SendAsync(next.Id, destination, code, cancellationToken);
+            _ = await phoneSender.SendAsync(next.Id, destination, code, cancellationToken);
         else
             await emailSender.SendAsync(next.Id, destination, code, cancellationToken);
         return AuthenticationResult<ChallengeDto>.Success(new ChallengeDto(next.Id, command.Channel == ChallengeChannel.Sms ? "sms" : "email",

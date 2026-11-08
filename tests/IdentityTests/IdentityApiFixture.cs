@@ -153,14 +153,18 @@ public sealed class IdentityApiFixture : IAsyncLifetime
 public sealed class TestPhoneCodeSender : IPhoneCodeSender
 {
     private readonly ConcurrentDictionary<Guid, string> codes = new();
+    private readonly ConcurrentDictionary<string, PhoneCodeDelivery> results = new();
 
     public bool IsAvailable => true;
 
-    public Task SendAsync(Guid challengeId, string phoneNumber, string code, CancellationToken cancellationToken)
+    public Task<PhoneCodeDelivery> SendAsync(Guid challengeId, string phoneNumber, string code, CancellationToken cancellationToken)
     {
-        codes[challengeId] = code;
-        return Task.CompletedTask;
+        var result = results.GetValueOrDefault(phoneNumber, PhoneCodeDelivery.Sent);
+        if (result == PhoneCodeDelivery.Sent) codes[challengeId] = code;
+        return Task.FromResult(result);
     }
+
+    public void Respond(string phoneNumber, PhoneCodeDelivery result) => results[phoneNumber] = result;
 
     public string CodeFor(Guid challengeId) => codes[challengeId];
     public bool HasCodeFor(Guid challengeId) => codes.ContainsKey(challengeId);
