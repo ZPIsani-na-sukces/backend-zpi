@@ -5,7 +5,8 @@ using Zpi.Modules.Identity.Infrastructure.Persistence;
 
 namespace Zpi.Modules.Identity.Application.Authentication.Register;
 
-public sealed class RegisterHandler(IdentityDbContext context, PasswordHashing passwords, IPhoneCodeSender sender, TimeProvider clock)
+public sealed class RegisterHandler(IdentityDbContext context, PasswordHashing passwords, IPhoneCodeSender sender,
+    IPhoneVerificationCodes codes, TimeProvider clock)
 {
     public async Task<AuthenticationResult<RegistrationDto>> Handle(RegisterCommand request, CancellationToken cancellationToken)
     {
@@ -38,7 +39,7 @@ public sealed class RegisterHandler(IdentityDbContext context, PasswordHashing p
         context.Accounts.Add(account);
         var (ticket, secret) = VerificationTickets.Create(context, account.Id, now);
         var (challenge, code) = VerificationChallengeFactory.Create(account, ChallengePurpose.PhoneVerification,
-            ChallengeChannel.Sms, phone, passwords, now, ticket);
+            ChallengeChannel.Sms, phone, passwords, now, ticket, codes.FixedCodeFor(phone));
         context.VerificationChallenges.Add(challenge);
         
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);

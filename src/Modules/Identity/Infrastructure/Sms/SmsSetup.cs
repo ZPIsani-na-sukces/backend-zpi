@@ -21,6 +21,8 @@ public static class SmsSetup
                 "Twilio:From must be a phone number such as +48123456789 or an alphanumeric sender ID of up to 11 characters.")
             .Validate(options => options.MessageTemplate?.Contains("{code}", StringComparison.Ordinal) == true,
                 "Twilio:MessageTemplate must contain {code}.")
+            .Validate(options => !options.IsConfigured || options.AllowedNumberSet.All(number => Matches(number, @"\A\+[1-9][0-9]{1,14}\z")),
+                "Twilio:AllowedNumbers must be a comma-separated list of phone numbers such as +48123456789.")
             .ValidateOnStart();
 
         services.AddHttpClient(TwilioPhoneCodeSender.ClientName, client =>
@@ -30,12 +32,19 @@ public static class SmsSetup
         }).RemoveAllLoggers().ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         
         services.AddSingleton<TwilioPhoneCodeSender>();
+        services.AddSingleton<SmsRecipientAllowlist>();
+        services.AddSingleton<IPhoneVerificationCodes>(provider => provider.GetRequiredService<SmsRecipientAllowlist>());
         services.AddSingleton<IPhoneCodeSender>(provider =>
-            provider.GetRequiredService<IOptions<TwilioOptions>>().Value.IsConfigured
-                ? provider.GetRequiredService<TwilioPhoneCodeSender>()
-                : provider.GetRequiredService<IHostEnvironment>().IsDevelopment()
-                    ? ActivatorUtilities.CreateInstance<DevelopmentPhoneCodeSender>(provider)
-                    : new UnavailablePhoneCodeSender());
+        {
+            var options = provider.GetRequiredService<IOptions<TwilioOptions>>().Value;
+            if (options.RestrictsRecipients)
+                return ActivatorUtilities.CreateInstance<AllowlistedPhoneCodeSender>(provider);
+            if (options.IsConfigured)
+                return provider.GetRequiredService<TwilioPhoneCodeSender>();
+            return provider.GetRequiredService<IHostEnvironment>().IsDevelopment()
+                ? ActivatorUtilities.CreateInstance<DevelopmentPhoneCodeSender>(provider)
+                : new UnavailablePhoneCodeSender();
+        });
         return services;
     }
 

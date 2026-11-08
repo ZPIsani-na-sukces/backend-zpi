@@ -28,6 +28,53 @@ public sealed class TwilioPhoneCodeSenderTests
         Assert.IsType(expected, services.GetRequiredService<IPhoneCodeSender>());
     }
 
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Development")]
+    public void The_allowlist_wraps_twilio_in_every_environment(string environment)
+    {
+        using var services = Services(Allowlisted(), environment);
+        Assert.IsType<AllowlistedPhoneCodeSender>(services.GetRequiredService<IPhoneCodeSender>());
+    }
+
+    [Theory]
+    [InlineData("48123456789")]
+    [InlineData("+48123456789,abc")]
+    public void Invalid_allowlist_numbers_are_rejected(string allowedNumbers)
+    {
+        var settings = Configured();
+        settings["Twilio:AllowedNumbers"] = allowedNumbers;
+        using var services = Services(settings, "Staging");
+        Assert.Throws<OptionsValidationException>(() => services.GetRequiredService<IOptions<TwilioOptions>>().Value);
+    }
+
+    [Fact]
+    public async Task Only_allowlisted_numbers_get_a_real_sms_and_others_get_the_fixed_code()
+    {
+        var twilio = new FakeTwilio(HttpStatusCode.Created, "{}");
+        using var services = Services(Allowlisted(), "Staging", twilio);
+        var codes = services.GetRequiredService<IPhoneVerificationCodes>();
+
+        Assert.Null(codes.FixedCodeFor("+48123456789"));
+        Assert.Equal("123456", codes.FixedCodeFor("+48999888777"));
+
+        Assert.Equal(PhoneCodeDelivery.Sent, await Send(services, phoneNumber: "+48999888777"));
+        Assert.Null(twilio.Uri);
+        Assert.Equal(PhoneCodeDelivery.Sent, await Send(services, phoneNumber: "+48111222333"));
+        Assert.Equal("+48111222333", QueryHelpers.ParseQuery(twilio.Body)["To"].ToString());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Without_an_active_allowlist_no_number_gets_the_fixed_code(bool twilioConfigured)
+    {
+        var settings = twilioConfigured ? Configured() : new Dictionary<string, string?>();
+        if (!twilioConfigured) settings["Twilio:AllowedNumbers"] = "+48123456789";
+        using var services = Services(settings, "Development");
+        Assert.Null(services.GetRequiredService<IPhoneVerificationCodes>().FixedCodeFor("+48999888777"));
+    }
+
     [Fact]
     public async Task Sends_the_code_from_the_configured_number_with_basic_auth()
     {
@@ -112,6 +159,13 @@ public sealed class TwilioPhoneCodeSenderTests
         ["Twilio:From"] = From
     };
 
+    private static Dictionary<string, string?> Allowlisted()
+    {
+        var settings = Configured();
+        settings["Twilio:AllowedNumbers"] = "+48123456789, +48111222333";
+        return settings;
+    }
+
     private static ServiceProvider Services(Dictionary<string, string?> settings, string environment = "Production",
         HttpMessageHandler? handler = null)
     {
@@ -124,8 +178,9 @@ public sealed class TwilioPhoneCodeSenderTests
         return services.BuildServiceProvider();
     }
 
-    private static Task<PhoneCodeDelivery> Send(ServiceProvider services, CancellationToken cancellationToken = default) =>
-        services.GetRequiredService<IPhoneCodeSender>().SendAsync(Guid.CreateVersion7(), "+48123456789", "042137", cancellationToken);
+    private static Task<PhoneCodeDelivery> Send(ServiceProvider services, CancellationToken cancellationToken = default,
+        string phoneNumber = "+48123456789") =>
+        services.GetRequiredService<IPhoneCodeSender>().SendAsync(Guid.CreateVersion7(), phoneNumber, "042137", cancellationToken);
 
     private sealed class FakeTwilio(HttpStatusCode status = HttpStatusCode.Created, string response = "{}",
         Exception? failure = null) : HttpMessageHandler

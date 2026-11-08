@@ -7,7 +7,7 @@ using Zpi.Modules.Identity.Infrastructure.Persistence;
 namespace Zpi.Modules.Identity.Application.Authentication.PhoneVerification;
 
 public sealed class StartPhoneVerificationHandler(IdentityDbContext context, PasswordHashing passwords,
-    IPhoneCodeSender sender, TimeProvider clock)
+    IPhoneCodeSender sender, IPhoneVerificationCodes codes, TimeProvider clock)
 {
     public async Task<AuthenticationResult<ChallengeDto>> Handle(StartPhoneVerificationCommand command, CancellationToken cancellationToken)
     {
@@ -29,7 +29,7 @@ public sealed class StartPhoneVerificationHandler(IdentityDbContext context, Pas
         foreach (var challenge in previous.Where(row => row.ConsumedAt is null && row.InvalidatedAt is null))
             challenge.InvalidatedAt = now;
         var (next, code) = VerificationChallengeFactory.Create(account, ChallengePurpose.PhoneVerification,
-            ChallengeChannel.Sms, account.PhoneNumber, passwords, now, ticket);
+            ChallengeChannel.Sms, account.PhoneNumber, passwords, now, ticket, codes.FixedCodeFor(account.PhoneNumber));
         context.VerificationChallenges.Add(next);
 
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);

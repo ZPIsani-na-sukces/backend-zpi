@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Zpi.Modules.Identity.Application.Accounts.UnverifiedAccountCleanup;
@@ -9,6 +10,7 @@ using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
+using Zpi.Modules.Identity.Infrastructure.Sms;
 
 namespace Zpi.IdentityTests;
 
@@ -305,5 +307,34 @@ public sealed class PhoneVerificationTests(IdentityApiFixture fixture)
         }
         Assert.Equal(HttpStatusCode.Created,
             (await client.PostAsJsonAsync("/api/v1/auth/registrations", Registration(stalePhone))).StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Fixed_code_verifies_the_phone_but_is_never_used_for_password_reset()
+    {
+        var phone = Phone();
+        await using var baseFactory = fixture.Factory();
+        await using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddSingleton<IPhoneVerificationCodes>(new AlwaysFixedCodes())));
+        using var client = factory.CreateClient();
+        var sender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+
+        var response = await client.PostAsJsonAsync("/api/v1/auth/registrations",
+            new { role = "senior", firstName = "Jan", lastName = "Kowalski", phoneNumber = phone, email = (string?)null, password = Password });
+        var registration = (await response.Content.ReadFromJsonAsync<RegistrationDto>())!;
+        Assert.Equal(SmsRecipientAllowlist.FixedCode, sender.CodeFor(registration.PhoneChallenge.ChallengeId));
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = SmsRecipientAllowlist.FixedCode })).StatusCode);
+
+        var reset = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel = "sms", identifier = phone });
+        var challenge = (await reset.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        Assert.Matches(@"\A[0-9]{6}\z", sender.CodeFor(challenge.ChallengeId));
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify",
+            new { challengeId = challenge.ChallengeId, code = SmsRecipientAllowlist.FixedCode })).StatusCode);
+    }
+
+    private sealed class AlwaysFixedCodes : IPhoneVerificationCodes
+    {
+        public string? FixedCodeFor(string phoneNumber) => SmsRecipientAllowlist.FixedCode;
     }
 }
