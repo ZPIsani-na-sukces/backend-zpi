@@ -48,5 +48,8 @@ public static class SmsSetup
         return services;
     }
 
-    private static bool Matches(string? value, string pattern) => value is not null && Regex.IsMatch(value, pattern);
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(100);
+
+    private static bool Matches(string? value, string pattern) =>
+        value is not null && Regex.IsMatch(value, pattern, RegexOptions.None, RegexTimeout);
 }

@@ -88,7 +88,7 @@ public sealed class TwilioPhoneCodeSenderTests
         var form = QueryHelpers.ParseQuery(twilio.Body);
         Assert.Equal("+48123456789", form["To"].ToString());
         Assert.Equal(From, form["From"].ToString());
-        Assert.Equal("Kod weryfikacyjny: 042137. Nie podawaj go nikomu.", form["Body"].ToString());
+        Assert.Equal("Kod weryfikacyjny: 042137", form["Body"].ToString());
     }
 
     [Fact]
