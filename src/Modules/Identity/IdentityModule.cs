@@ -6,6 +6,7 @@ using Zpi.Modules.Identity.Api;
 using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.Identity.Infrastructure;
 using Zpi.Modules.Identity.Application;
+using Zpi.Modules.Identity.Application.Accounts.DeleteAccount;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.Identity.Infrastructure.BackgroundJobs;
@@ -27,6 +28,11 @@ public static class IdentityModule
         else
             services.AddSingleton<IEmailCodeSender, UnavailableEmailCodeSender>();
         services.AddScoped<IIdentityFacade, IdentityFacade>();
+        services.AddOptions<AccountDeletionOptions>()
+            .Bind(configuration.GetSection(AccountDeletionOptions.SectionName))
+            .Validate(options => options.GracePeriod >= TimeSpan.Zero && options.GracePeriod <= AccountDeletionOptions.MaximumGracePeriod,
+                "AccountDeletion:GracePeriod must be between 00:00:00 and 365.00:00:00.")
+            .ValidateOnStart();
         services.AddIdentityApplication();
         services.AddIdentityApi();
         services.AddIdentityAuthentication(configuration);

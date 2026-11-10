@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.Net.Http.Headers;
@@ -151,7 +153,7 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
     [PostgresFact]
     public async Task Deletion_requires_password_disables_account_and_schedules_removal_in_30_days()
     {
-        await using var factory = fixture.Factory();
+        await using var factory = Factory(gracePeriod: TimeSpan.FromDays(30));
         using var client = factory.CreateClient();
         var (id, phone) = await ActiveAccount(client);
         var first = await Login(client, phone);
@@ -176,9 +178,48 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
+    public async Task Deletion_without_grace_period_removes_account_and_owned_data_and_frees_phone_number()
+    {
+        await using var factory = Factory(gracePeriod: TimeSpan.Zero);
+        using var client = factory.CreateClient();
+        var (id, phone) = await ActiveAccount(client);
+        var session = await Login(client, phone);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var profile = scope.ServiceProvider.GetRequiredService<SeniorProfileDbContext>();
+            profile.SeniorContactPersons.Add(new SeniorContactPerson
+            {
+                SeniorId = id,
+                DisplayName = "Contact",
+                PhoneNumber = "+48123456789",
+                CreatedByAccountId = id,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+            await profile.SaveChangesAsync();
+        }
+        Bearer(client, session);
+        var response = await Delete(client, Password);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        AssertRefreshCookieCleared(response);
+        var body = (await response.Content.ReadFromJsonAsync<AccountDeletionDto>())!;
+        Assert.InRange((DateTimeOffset.UtcNow - body.DeletionScheduledAt).TotalSeconds, 0, 60);
+        await using (var context = fixture.Context())
+            Assert.False(await context.Accounts.AnyAsync(row => row.Id == id));
+        await using (var scope = factory.Services.CreateAsyncScope())
+            Assert.False(await scope.ServiceProvider.GetRequiredService<SeniorProfileDbContext>().SeniorContactPersons.AnyAsync(row => row.SeniorId == id));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Refresh(client, session.RefreshToken!)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+        var registration = await client.PostAsJsonAsync("/api/v1/auth/registrations", new
+        { role = "senior", firstName = "Jan", lastName = "Kowalski", phoneNumber = phone, email = (string?)null, password = Password });
+        Assert.Equal(HttpStatusCode.Created, registration.StatusCode);
+    }
+
+    [PostgresFact]
     public async Task Deletion_job_removes_due_account_and_owned_data_but_keeps_recent_and_active_accounts()
     {
-        await using var factory = fixture.Factory();
+        await using var factory = Factory(gracePeriod: TimeSpan.FromDays(30));
         using var client = factory.CreateClient();
         var (dueId, _) = await ActiveAccount(client);
         var (recentId, _) = await ActiveAccount(client);
@@ -218,6 +259,13 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         Assert.False(await profile.SeniorContactPersons.AnyAsync(row => row.SeniorId == dueId));
         Assert.True(await profile.SeniorContactPersons.AnyAsync(row => row.SeniorId == activeId));
     }
+
+    private WebApplicationFactory<Program> Factory(TimeSpan gracePeriod) =>
+        fixture.Factory().WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+            configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AccountDeletion:GracePeriod"] = gracePeriod.ToString("c")
+            })));
 
     private static void AssertRefreshCookieCleared(HttpResponseMessage response)
     {
