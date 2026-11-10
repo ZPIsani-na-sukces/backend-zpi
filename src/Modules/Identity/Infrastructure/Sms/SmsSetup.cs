@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Zpi.Modules.Identity.Application.Authentication;
+using Zpi.Modules.Identity.Contracts;
 
 namespace Zpi.Modules.Identity.Infrastructure.Sms;
 
@@ -25,26 +26,27 @@ public static class SmsSetup
                 "Twilio:AllowedNumbers must be a comma-separated list of phone numbers such as +48123456789.")
             .ValidateOnStart();
 
-        services.AddHttpClient(TwilioPhoneCodeSender.ClientName, client =>
+        services.AddHttpClient(TwilioSmsSender.ClientName, client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
             client.MaxResponseContentBufferSize = 65_536;
         }).RemoveAllLoggers().ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
-        
-        services.AddSingleton<TwilioPhoneCodeSender>();
+
+        services.AddSingleton<TwilioSmsSender>();
         services.AddSingleton<SmsRecipientAllowlist>();
         services.AddSingleton<IPhoneVerificationCodes>(provider => provider.GetRequiredService<SmsRecipientAllowlist>());
-        services.AddSingleton<IPhoneCodeSender>(provider =>
+        services.AddSingleton<ISmsSender>(provider =>
         {
             var options = provider.GetRequiredService<IOptions<TwilioOptions>>().Value;
             if (options.RestrictsRecipients)
-                return ActivatorUtilities.CreateInstance<AllowlistedPhoneCodeSender>(provider);
+                return ActivatorUtilities.CreateInstance<AllowlistedSmsSender>(provider);
             if (options.IsConfigured)
-                return provider.GetRequiredService<TwilioPhoneCodeSender>();
+                return provider.GetRequiredService<TwilioSmsSender>();
             return provider.GetRequiredService<IHostEnvironment>().IsDevelopment()
-                ? ActivatorUtilities.CreateInstance<DevelopmentPhoneCodeSender>(provider)
-                : new UnavailablePhoneCodeSender();
+                ? ActivatorUtilities.CreateInstance<DevelopmentSmsSender>(provider)
+                : new UnavailableSmsSender();
         });
+        services.AddSingleton<IPhoneCodeSender, PhoneCodeSender>();
         return services;
     }
 

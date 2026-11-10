@@ -315,6 +315,21 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
+    public async Task Low_battery_reaches_caretakers_in_app_without_an_sms()
+    {
+        await using var factory = Factory(new TestClock());
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        await using (var scope = factory.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<INotificationsFacade>().EnqueueAsync("test", new NotificationEvent(Guid.CreateVersion7(), caretaker.Id,
+                senior.Id, NotificationType.LowBattery, "Niski poziom baterii", "Urządzenie seniora ma niski poziom baterii.",
+                NotificationTargetKind.Incident, Guid.CreateVersion7(), null), CancellationToken.None);
+        var item = Assert.Single((await Inbox(caretaker)).Items);
+        Assert.Equal("inApp", Assert.Single(item.Deliveries).Channel);
+    }
+
+    [PostgresFact]
     public async Task Duplicate_events_and_parallel_processors_do_not_create_duplicate_notifications_or_claims()
     {
         var clock = new TestClock();

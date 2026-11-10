@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Zpi.Database.Outbox;
 using Zpi.Modules.Care.Contracts;
+using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.Notifications.Contracts;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Modules.Safety.Application.Notifications;
@@ -11,7 +12,7 @@ using Zpi.Modules.Safety.Infrastructure.Persistence;
 
 namespace Zpi.Modules.Safety.Application.Incidents.Trigger;
 
-public sealed class TriggerSosHandler(SafetyDbContext context, ICareFacade care, IncidentMapper mapper,
+public sealed class TriggerSosHandler(SafetyDbContext context, ICareFacade care, IIdentityFacade identity, IncidentMapper mapper,
     INotificationProcessingSignal signal, TimeProvider clock)
 {
     public async Task<SafetyResult<TriggeredSosDto>> Handle(TriggerSosCommand command, CancellationToken cancellationToken)
@@ -73,11 +74,12 @@ public sealed class TriggerSosHandler(SafetyDbContext context, ICareFacade care,
             };
             context.SosIncidents.Add(incident);
             var recipients = await care.GetActiveCaretakerIdsAsync(command.SeniorId, cancellationToken);
+            var senior = await SeniorDisplayName.LoadAsync(identity, command.SeniorId, cancellationToken);
             foreach (var recipient in recipients)
             {
                 var eventId = Guid.CreateVersion7();
                 var message = new NotificationEvent(eventId, recipient, command.SeniorId, NotificationType.Sos,
-                    "Wezwanie pomocy SOS", "Senior potrzebuje pomocy. Otwórz aplikację, aby zobaczyć zgłoszenie.",
+                    "Wezwanie pomocy SOS", $"== SOS ==\n\n{senior} potrzebuje pomocy. Otwórz aplikację!",
                     NotificationTargetKind.Incident, incident.Id, null);
                 context.OutboxMessages.Add(new OutboxMessage
                 {

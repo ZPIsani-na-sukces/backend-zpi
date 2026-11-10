@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -13,6 +14,7 @@ using Zpi.Domain;
 using Zpi.Modules.Care.Application.Invitations;
 using Zpi.Modules.Care.Application.Relationships;
 using Zpi.Modules.Identity.Application.Authentication;
+using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.Notifications.Application.Delivery;
@@ -208,6 +210,27 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
         await Process(factory);
         Assert.Single((await Inbox(first)).Items);
         Assert.Single((await Inbox(second)).Items);
+    }
+
+    [PostgresFact]
+    public async Task Exit_texts_every_caretaker_with_the_senior_and_zone_name()
+    {
+        await using var factory = Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var first = await Actor(factory, AccountRole.Caretaker);
+        using var second = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, first);
+        await Link(senior, second);
+        await CreateZone(first, senior.Id, Zone());
+        var device = await Register(senior);
+        await Exit(senior, device.DeviceId, Now().AddMinutes(-3));
+        await Process(factory);
+        const string text = "Jan Kowalski opuścił bezpieczne geostrefy";
+        var phones = new[] { first.Phone, second.Phone };
+        var sent = factory.Services.GetRequiredService<RecordingSms>().Sent.Where(row => phones.Contains(row.PhoneNumber)).ToArray();
+        Assert.Equal(phones.Order(), sent.Select(row => row.PhoneNumber).Order());
+        Assert.All(sent, row => Assert.Equal(text, row.Message));
+        Assert.Equal(text, Assert.Single((await Inbox(first)).Items).Message);
     }
 
     [PostgresFact]
@@ -546,7 +569,7 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
     private WebApplicationFactory<Program> Factory() => fixture.Factory().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
     {
         services.AddSingleton<RecordingSms>();
-        services.AddSingleton<ISmsNotificationSender>(provider => provider.GetRequiredService<RecordingSms>());
+        services.AddSingleton<ISmsSender>(provider => provider.GetRequiredService<RecordingSms>());
         services.AddSingleton<RecordingSignal>();
         services.AddSingleton<INotificationProcessingSignal>(provider => provider.GetRequiredService<RecordingSignal>());
     }));
@@ -568,10 +591,15 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
         public int Count { get; private set; }
         public void RequestProcessing() => Count++;
     }
-    private sealed class RecordingSms : ISmsNotificationSender
+    private sealed class RecordingSms : ISmsSender
     {
-        public Task<DeliverySendResult> SendAsync(string idempotencyKey, string phoneNumber, string message, CancellationToken cancellationToken) =>
-            Task.FromResult(new DeliverySendResult(true, "test:" + idempotencyKey));
+        public ConcurrentQueue<(string PhoneNumber, string Message)> Sent { get; } = new();
+        public bool IsAvailable => true;
+        public Task<SmsSendResult> SendAsync(string reference, string phoneNumber, string message, CancellationToken cancellationToken)
+        {
+            Sent.Enqueue((phoneNumber, message));
+            return Task.FromResult(new SmsSendResult(SmsSendStatus.Sent));
+        }
     }
     private async Task<TestActor> Actor(WebApplicationFactory<Program> factory, AccountRole role)
     {

@@ -20,16 +20,11 @@ public static class NotificationsModule
         services.AddNotificationsApi();
         services.AddNotificationsApplication();
         services.AddNotificationsPersistence(configuration);
+        services.AddSingleton<ISmsNotificationSender, SmsNotificationSender>();
         if (environment.IsDevelopment())
-        {
             services.AddSingleton<IPushNotificationSender, DevelopmentPushNotificationSender>();
-            services.AddSingleton<ISmsNotificationSender, DevelopmentSmsNotificationSender>();
-        }
         else
-        {
-            services.AddSingleton<IPushNotificationSender, UnavailableNotificationSender>();
-            services.AddSingleton<ISmsNotificationSender, UnavailableNotificationSender>();
-        }
+            services.AddSingleton<IPushNotificationSender, UnavailablePushNotificationSender>();
         if (configuration.GetValue("Notifications:WorkerEnabled", true)) services.AddHostedService<NotificationWorker>();
         return services;
     }
