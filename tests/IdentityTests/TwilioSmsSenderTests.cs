@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
@@ -5,27 +6,31 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Zpi.Modules.Identity.Application.Authentication;
+using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.Identity.Infrastructure.Sms;
 
 namespace Zpi.IdentityTests;
 
-public sealed class TwilioPhoneCodeSenderTests
+public sealed class TwilioSmsSenderTests
 {
     private const string AccountSid = "AC0123456789abcdef0123456789abcdef";
     private const string AuthToken = "test-auth-token";
     private const string From = "+15005550006";
 
     [Theory]
-    [InlineData("Production", false, typeof(UnavailablePhoneCodeSender))]
-    [InlineData("Development", false, typeof(DevelopmentPhoneCodeSender))]
-    [InlineData("Production", true, typeof(TwilioPhoneCodeSender))]
-    [InlineData("Development", true, typeof(TwilioPhoneCodeSender))]
+    [InlineData("Production", false, typeof(UnavailableSmsSender))]
+    [InlineData("Development", false, typeof(DevelopmentSmsSender))]
+    [InlineData("Production", true, typeof(TwilioSmsSender))]
+    [InlineData("Development", true, typeof(TwilioSmsSender))]
     public void Twilio_is_used_whenever_it_is_configured(string environment, bool configured, Type expected)
     {
         using var services = Services(configured ? Configured() : new Dictionary<string, string?>(), environment);
-        Assert.IsType(expected, services.GetRequiredService<IPhoneCodeSender>());
+        Assert.IsType(expected, services.GetRequiredService<ISmsSender>());
+        var codes = Assert.IsType<PhoneCodeSender>(services.GetRequiredService<IPhoneCodeSender>());
+        Assert.Equal(expected != typeof(UnavailableSmsSender), codes.IsAvailable);
     }
 
     [Theory]
@@ -34,7 +39,7 @@ public sealed class TwilioPhoneCodeSenderTests
     public void The_allowlist_wraps_twilio_in_every_environment(string environment)
     {
         using var services = Services(Allowlisted(), environment);
-        Assert.IsType<AllowlistedPhoneCodeSender>(services.GetRequiredService<IPhoneCodeSender>());
+        Assert.IsType<AllowlistedSmsSender>(services.GetRequiredService<ISmsSender>());
     }
 
     [Theory]
@@ -62,6 +67,18 @@ public sealed class TwilioPhoneCodeSenderTests
         Assert.Null(twilio.Uri);
         Assert.Equal(PhoneCodeDelivery.Sent, await Send(services, phoneNumber: "+48111222333"));
         Assert.Equal("+48111222333", QueryHelpers.ParseQuery(twilio.Body)["To"].ToString());
+    }
+
+    [Fact]
+    public async Task Messages_to_numbers_outside_the_allowlist_are_only_logged()
+    {
+        var twilio = new FakeTwilio(HttpStatusCode.Created, """{"sid":"SM0123"}""");
+        var logs = new RecordingLogs();
+        using var services = Services(Allowlisted(), "Staging", twilio, logs);
+
+        Assert.Equal(new SmsSendResult(SmsSendStatus.Sent), await SendSms(services, phoneNumber: "+48999888777"));
+        Assert.Null(twilio.Uri);
+        Assert.Contains(logs.Messages, message => message.Contains("notification delivery 42") && message.Contains("Twilio:AllowedNumbers"));
     }
 
     [Theory]
@@ -101,6 +118,20 @@ public sealed class TwilioPhoneCodeSenderTests
 
         Assert.Equal(PhoneCodeDelivery.Sent, await Send(services));
         Assert.Equal("ZPI: 042137", QueryHelpers.ParseQuery(twilio.Body)["Body"].ToString());
+    }
+
+    [Fact]
+    public async Task Sends_the_given_message_unchanged_and_returns_the_twilio_sid()
+    {
+        const string message = "Jan Kowalski jest poza bezpiecznym obszarem „Dom”. Otwórz aplikację, aby sprawdzić zgłoszenie.";
+        var twilio = new FakeTwilio(HttpStatusCode.Created, """{"sid":"SM0123","status":"queued"}""");
+        using var services = Services(Configured(), handler: twilio);
+
+        Assert.Equal(new SmsSendResult(SmsSendStatus.Sent, "SM0123"), await SendSms(services, message: message));
+        var form = QueryHelpers.ParseQuery(twilio.Body);
+        Assert.Equal("+48123456789", form["To"].ToString());
+        Assert.Equal(From, form["From"].ToString());
+        Assert.Equal(message, form["Body"].ToString());
     }
 
     [Theory]
@@ -167,20 +198,27 @@ public sealed class TwilioPhoneCodeSenderTests
     }
 
     private static ServiceProvider Services(Dictionary<string, string?> settings, string environment = "Production",
-        HttpMessageHandler? handler = null)
+        HttpMessageHandler? handler = null, RecordingLogs? logs = null)
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging =>
+        {
+            if (logs is not null) logging.AddProvider(logs);
+        });
         services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = environment });
         services.AddIdentitySms(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
         if (handler is not null)
-            services.AddHttpClient(TwilioPhoneCodeSender.ClientName).ConfigurePrimaryHttpMessageHandler(() => handler);
+            services.AddHttpClient(TwilioSmsSender.ClientName).ConfigurePrimaryHttpMessageHandler(() => handler);
         return services.BuildServiceProvider();
     }
 
     private static Task<PhoneCodeDelivery> Send(ServiceProvider services, CancellationToken cancellationToken = default,
         string phoneNumber = "+48123456789") =>
         services.GetRequiredService<IPhoneCodeSender>().SendAsync(Guid.CreateVersion7(), phoneNumber, "042137", cancellationToken);
+
+    private static Task<SmsSendResult> SendSms(ServiceProvider services, string phoneNumber = "+48123456789",
+        string message = "Wiadomość testowa") =>
+        services.GetRequiredService<ISmsSender>().SendAsync("notification delivery 42", phoneNumber, message, CancellationToken.None);
 
     private sealed class FakeTwilio(HttpStatusCode status = HttpStatusCode.Created, string response = "{}",
         Exception? failure = null) : HttpMessageHandler
@@ -199,6 +237,23 @@ public sealed class TwilioPhoneCodeSenderTests
             Body = await request.Content!.ReadAsStringAsync(cancellationToken);
             if (failure is not null) throw failure;
             return new HttpResponseMessage(status) { Content = new StringContent(response) };
+        }
+    }
+
+    private sealed class RecordingLogs : ILoggerProvider
+    {
+        public ConcurrentQueue<string> Messages { get; } = new();
+
+        public ILogger CreateLogger(string categoryName) => new Logger(Messages);
+
+        public void Dispose() { }
+
+        private sealed class Logger(ConcurrentQueue<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter) => messages.Enqueue(formatter(state, exception));
         }
     }
 }

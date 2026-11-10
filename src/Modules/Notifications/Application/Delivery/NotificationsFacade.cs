@@ -41,13 +41,18 @@ internal sealed class NotificationsFacade(NotificationsDbContext context, IIdent
             SentAt = now,
             DeliveredAt = now
         });
-        context.NotificationDeliveries.Add(new NotificationDelivery
-        {
-            NotificationId = notification.Id,
-            Channel = recipient.Role == AccountRoles.Senior ? DeliveryChannel.Push : DeliveryChannel.Sms,
-            Status = DeliveryStatus.Pending,
-            NextAttemptAt = now
-        });
+        if (ExternalChannel(recipient.Role, message.Type) is { } channel)
+            context.NotificationDeliveries.Add(new NotificationDelivery
+            {
+                NotificationId = notification.Id,
+                Channel = channel,
+                Status = DeliveryStatus.Pending,
+                NextAttemptAt = now
+            });
         await context.SaveChangesAsync(cancellationToken);
     }
+
+    private static DeliveryChannel? ExternalChannel(string role, NotificationType type) => role == AccountRoles.Senior
+        ? DeliveryChannel.Push
+        : type is NotificationType.Sos or NotificationType.GeofenceExit ? DeliveryChannel.Sms : null;
 }

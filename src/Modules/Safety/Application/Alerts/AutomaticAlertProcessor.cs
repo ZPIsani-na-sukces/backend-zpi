@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Zpi.Database.Outbox;
 using Zpi.Modules.Care.Contracts;
+using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.Notifications.Contracts;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Modules.Safety.Application.Notifications;
@@ -11,7 +12,8 @@ using Zpi.Modules.Safety.Infrastructure.Persistence;
 
 namespace Zpi.Modules.Safety.Application.Alerts;
 
-public sealed class AutomaticAlertProcessor(SafetyDbContext context, ICareFacade care, IOptions<AlertOptions> options)
+public sealed class AutomaticAlertProcessor(SafetyDbContext context, ICareFacade care, IIdentityFacade identity,
+    IOptions<AlertOptions> options)
 {
     public async Task<bool> EvaluateAsync(Device device, IReadOnlyList<LocationSample> locations, IReadOnlyList<BatterySample> batteries,
         DateTimeOffset now, CancellationToken cancellationToken)
@@ -67,8 +69,9 @@ public sealed class AutomaticAlertProcessor(SafetyDbContext context, ICareFacade
             {
                 recipients ??= await care.GetActiveCaretakerIdsAsync(state.SeniorId, cancellationToken);
                 queued = true;
+                var senior = await SeniorDisplayName.LoadAsync(identity, state.SeniorId, cancellationToken);
                 Enqueue(recipients, state.SeniorId, incident.Id, SafetyNotificationEvents.GeofenceExited, NotificationType.GeofenceExit,
-                    "Opuszczenie bezpiecznego obszaru", "Senior opuścił bezpieczny obszar. Otwórz aplikację, aby sprawdzić zgłoszenie.", now);
+                    "Opuszczenie bezpiecznego obszaru", $"{senior} opuścił bezpieczne geostrefy", now);
             }
         }
         foreach (var sample in batteries.OrderBy(row => row.CapturedAt))
