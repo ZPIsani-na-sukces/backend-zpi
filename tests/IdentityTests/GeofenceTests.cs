@@ -251,6 +251,72 @@ public sealed partial class GeofenceTests(IdentityApiFixture fixture)
         Assert.Equal("open", Assert.Single((await Incidents(senior)).Items).Status);
     }
 
+    [PostgresTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Confirmed_entry_sends_one_sms_when_enabled_without_creating_an_incident(bool smsEnabled)
+    {
+        await using var factory = Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        var zone = await CreateZone(caretaker, senior.Id, Zone() with { SmsOnExitEnabled = smsEnabled });
+        var device = await Register(senior);
+        var at = Now().AddMinutes(-3);
+        await Status(await Upload(senior, device.DeviceId, Gps(at, 21.03), Gps(at.AddSeconds(30), 21.03)), 200);
+        await Process(factory);
+        Assert.Empty((await Inbox(caretaker)).Items);
+        await Status(await Upload(senior, device.DeviceId, Gps(at.AddSeconds(60), 21)), 200);
+        await Process(factory);
+        Assert.Empty((await Inbox(caretaker)).Items);
+        var confirmation = Gps(at.AddSeconds(90), 21);
+        await Status(await Upload(senior, device.DeviceId, confirmation), 200);
+        await Status(await Upload(senior, device.DeviceId, confirmation, Gps(at.AddSeconds(120), 21)), 200);
+        await Process(factory);
+        await Process(factory);
+        Assert.Empty((await Incidents(senior)).Items);
+        var inbox = (await Inbox(caretaker)).Items;
+        var messages = factory.Services.GetRequiredService<RecordingSms>().Sent
+            .Where(row => row.PhoneNumber == caretaker.Phone).Select(row => row.Message).ToArray();
+        if (smsEnabled)
+        {
+            var notification = Assert.Single(inbox);
+            Assert.Equal("geofenceEntry", notification.Type);
+            Assert.Equal("geoZone", notification.Target.Kind);
+            Assert.Equal(zone.ZoneId, notification.Target.ZoneId);
+            Assert.Contains("wszedł", Assert.Single(messages));
+            Assert.Contains(notification.Deliveries, row => row.Channel == "sms" && row.Status == "sent");
+        }
+        else
+        {
+            Assert.Empty(inbox);
+            Assert.Empty(messages);
+        }
+    }
+
+    [PostgresFact]
+    public async Task Return_notifies_even_with_an_open_exit_incident_and_initial_inside_does_not_notify()
+    {
+        await using var factory = Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        await CreateZone(caretaker, senior.Id, Zone());
+        var device = await Register(senior);
+        var at = Now().AddMinutes(-4);
+        await Status(await Upload(senior, device.DeviceId, Gps(at, 21), Gps(at.AddSeconds(30), 21)), 200);
+        await Process(factory);
+        Assert.Empty((await Inbox(caretaker)).Items);
+        await Status(await Upload(senior, device.DeviceId, Gps(at.AddSeconds(60), 21.03), Gps(at.AddSeconds(90), 21.03)), 200);
+        await Process(factory);
+        Assert.Equal("geofenceExit", Assert.Single((await Inbox(caretaker)).Items).Type);
+        await Status(await Upload(senior, device.DeviceId, Gps(at.AddSeconds(120), 21), Gps(at.AddSeconds(150), 21)), 200);
+        await Process(factory);
+        Assert.Equal(new[] { "geofenceEntry", "geofenceExit" }, (await Inbox(caretaker)).Items.Select(row => row.Type).Order());
+        Assert.Equal("open", Assert.Single((await Incidents(senior)).Items).Status);
+        Assert.Equal(2, factory.Services.GetRequiredService<RecordingSms>().Sent.Count(row => row.PhoneNumber == caretaker.Phone));
+    }
+
     [PostgresFact]
     public async Task Closed_geofence_requires_a_return_before_another_incident_can_be_created()
     {
