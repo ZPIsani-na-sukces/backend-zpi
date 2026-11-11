@@ -54,5 +54,5 @@ internal sealed class NotificationsFacade(NotificationsDbContext context, IIdent
 
     private static DeliveryChannel? ExternalChannel(string role, NotificationType type) => role == AccountRoles.Senior
         ? DeliveryChannel.Push
-        : type is NotificationType.Sos or NotificationType.GeofenceExit ? DeliveryChannel.Sms : null;
+        : type is NotificationType.Sos or NotificationType.GeofenceExit or NotificationType.GeofenceEntry ? DeliveryChannel.Sms : null;
 }

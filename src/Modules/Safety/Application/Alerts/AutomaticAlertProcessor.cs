@@ -53,8 +53,9 @@ public sealed class AutomaticAlertProcessor(SafetyDbContext context, ICareFacade
                 {
                     recipients ??= await care.GetActiveCaretakerIdsAsync(state.SeniorId, cancellationToken);
                     queued = true;
+                    var senior = await SeniorDisplayName.LoadAsync(identity, state.SeniorId, cancellationToken);
                     Enqueue(recipients, state.SeniorId, smsZone.ZoneId, SafetyNotificationEvents.GeofenceEntered, NotificationType.GeofenceEntry,
-                        "Wejście do bezpiecznego obszaru", "Senior wszedł do bezpiecznego obszaru. Otwórz aplikację, aby sprawdzić geostrefy.", now,
+                        "Wejście do bezpiecznego obszaru", $"{senior} wszedł do bezpiecznych geostref", now,
                         NotificationTargetKind.GeoZone, sample.CapturedAt + options.Value.Freshness);
                 }
             }
