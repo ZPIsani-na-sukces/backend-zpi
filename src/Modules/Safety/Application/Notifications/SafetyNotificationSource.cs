@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Zpi.Modules.Safety.Application.Alerts;
 using Zpi.Modules.Notifications.Contracts;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Modules.Safety.Domain;
@@ -6,7 +8,7 @@ using Zpi.Modules.Safety.Infrastructure.Persistence;
 
 namespace Zpi.Modules.Safety.Application.Notifications;
 
-public sealed class SafetyNotificationSource(SafetyDbContext context, TimeProvider clock) : INotificationEventSource
+public sealed class SafetyNotificationSource(SafetyDbContext context, TimeProvider clock, IOptions<AlertOptions> options) : INotificationEventSource
 {
     public string Name => SafetyNotificationEvents.Source;
 
@@ -30,10 +32,10 @@ public sealed class SafetyNotificationSource(SafetyDbContext context, TimeProvid
 
     public async Task<bool> IsRelevantAsync(NotificationEvent notification, CancellationToken cancellationToken)
     {
-        if (notification.TargetKind != NotificationTargetKind.Incident || notification.SeniorId is null ||
+        if (notification.SeniorId is null ||
             notification.RecipientAccountId == notification.SeniorId) return false;
         var seniorId = notification.SeniorId.Value;
-        if (notification.Type == NotificationType.Sos)
+        if (notification.Type == NotificationType.Sos && notification.TargetKind == NotificationTargetKind.Incident)
             return await context.SosIncidents
             .AsNoTracking()
             .AnyAsync(row => row.Id == notification.TargetId &&
@@ -42,6 +44,13 @@ public sealed class SafetyNotificationSource(SafetyDbContext context, TimeProvid
             .AsNoTracking()
             .SingleOrDefaultAsync(row => row.SeniorId == seniorId, cancellationToken);
         if (state is null || !await context.Devices.AnyAsync(row => row.Id == state.DeviceId && row.MonitoringEnabled && row.RetiredAt == null, cancellationToken)) return false;
+        if (notification.Type == NotificationType.GeofenceEntry)
+            return notification.TargetKind == NotificationTargetKind.GeoZone && state.IsInside == true &&
+                state.GeofenceEnteredAt is { } enteredAt && notification.ExpiresAt == enteredAt + options.Value.Freshness &&
+                notification.ExpiresAt > clock.GetUtcNow() &&
+                await context.GeoZones.AnyAsync(row => row.Id == notification.TargetId && row.SeniorId == seniorId &&
+                    row.DeletedAt == null && row.IsActive && row.SmsOnExitEnabled, cancellationToken);
+        if (notification.TargetKind != NotificationTargetKind.Incident) return false;
         if (notification.Type == NotificationType.GeofenceExit && state.GeofenceNotificationActive && state.GeofenceIncidentId == notification.TargetId)
             return await context.GeofenceIncidents
             .AsNoTracking()

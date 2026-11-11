@@ -51,6 +51,8 @@ internal static class GeofenceDetector
         }
         if (sample.CapturedAt - state.CandidateSince < options.Confirmation) return false;
         var exited = state.IsInside == true && observation == false;
+        var entered = state.IsInside == false && observation == true;
+        state.GeofenceEnteredAt = entered ? sample.CapturedAt : null;
         state.IsInside = observation;
         state.CandidateInside = null;
         state.CandidateSince = null;

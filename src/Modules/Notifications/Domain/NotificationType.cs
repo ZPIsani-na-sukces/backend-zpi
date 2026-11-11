@@ -6,5 +6,6 @@ public enum NotificationType
     GeofenceExit,
     LowBattery,
     RoutineReminder,
-    CareInvitation
+    CareInvitation,
+    GeofenceEntry
 }

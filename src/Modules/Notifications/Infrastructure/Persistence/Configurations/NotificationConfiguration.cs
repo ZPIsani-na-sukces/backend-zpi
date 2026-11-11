@@ -11,10 +11,10 @@ internal sealed class NotificationConfiguration : IEntityTypeConfiguration<Notif
     {
         builder.ToTable("notification", table =>
         {
-            table.HasCheckConstraint("ck_notification_target_type", "(type IN ('sos','geofenceExit','lowBattery') AND target_kind = 'incident') OR (type = 'routineReminder' AND target_kind = 'taskOccurrence') OR (type = 'careInvitation' AND target_kind = 'careInvitation')");
+            table.HasCheckConstraint("ck_notification_target_type", "(type IN ('sos','geofenceExit','lowBattery') AND target_kind = 'incident') OR (type = 'geofenceEntry' AND target_kind = 'geoZone') OR (type = 'routineReminder' AND target_kind = 'taskOccurrence') OR (type = 'careInvitation' AND target_kind = 'careInvitation')");
             table.HasCheckConstraint("ck_notification_version", "version >= 1");
-            table.HasCheckConstraint("ck_notification_type", "type IN ('sos','geofenceExit','lowBattery','routineReminder','careInvitation')");
-            table.HasCheckConstraint("ck_notification_target_kind", "target_kind IN ('incident','taskOccurrence','careInvitation')");
+            table.HasCheckConstraint("ck_notification_type", "type IN ('sos','geofenceExit','lowBattery','routineReminder','careInvitation','geofenceEntry')");
+            table.HasCheckConstraint("ck_notification_target_kind", "target_kind IN ('incident','taskOccurrence','careInvitation','geoZone')");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();

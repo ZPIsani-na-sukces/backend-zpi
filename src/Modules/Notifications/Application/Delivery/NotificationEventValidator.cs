@@ -18,6 +18,7 @@ public sealed class NotificationEventValidator : AbstractValidator<NotificationE
         RuleFor(row => row.TargetId).NotEmpty();
         RuleFor(row => row).Must(row => row.Type switch
         {
+            NotificationType.GeofenceEntry => row.TargetKind == NotificationTargetKind.GeoZone,
             NotificationType.RoutineReminder => row.TargetKind == NotificationTargetKind.TaskOccurrence,
             NotificationType.CareInvitation => row.TargetKind == NotificationTargetKind.CareInvitation,
             _ => row.TargetKind == NotificationTargetKind.Incident

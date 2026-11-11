@@ -43,7 +43,22 @@ public sealed class AutomaticAlertProcessor(SafetyDbContext context, ICareFacade
         IReadOnlyCollection<Guid>? recipients = null;
         foreach (var sample in locations.OrderBy(row => row.CapturedAt))
         {
-            if (!GeofenceDetector.Evaluate(state, sample, zones, now, options.Value) || geoActive) continue;
+            var previousEntry = state.GeofenceEnteredAt;
+            var exited = GeofenceDetector.Evaluate(state, sample, zones, now, options.Value);
+            if (state.GeofenceEnteredAt == sample.CapturedAt && previousEntry != state.GeofenceEnteredAt)
+            {
+                var enteredZones = JsonSerializer.Deserialize<DepartedZoneDto[]>(state.InsideZonesJson)!;
+                var smsZone = enteredZones.FirstOrDefault(row => row.SmsOnExitEnabled);
+                if (smsZone is not null)
+                {
+                    recipients ??= await care.GetActiveCaretakerIdsAsync(state.SeniorId, cancellationToken);
+                    queued = true;
+                    Enqueue(recipients, state.SeniorId, smsZone.ZoneId, SafetyNotificationEvents.GeofenceEntered, NotificationType.GeofenceEntry,
+                        "Wejście do bezpiecznego obszaru", "Senior wszedł do bezpiecznego obszaru. Otwórz aplikację, aby sprawdzić geostrefy.", now,
+                        NotificationTargetKind.GeoZone, sample.CapturedAt + options.Value.Freshness);
+                }
+            }
+            if (!exited || geoActive) continue;
             var departed = JsonSerializer.Deserialize<DepartedZoneDto[]>(state.InsideZonesJson)!;
             var incident = new GeofenceIncident
             {
@@ -112,14 +127,15 @@ public sealed class AutomaticAlertProcessor(SafetyDbContext context, ICareFacade
         return queued;
     }
 
-    private void Enqueue(IReadOnlyCollection<Guid> recipients, Guid seniorId, Guid incidentId, string eventType, NotificationType type,
-        string title, string message, DateTimeOffset now)
+    private void Enqueue(IReadOnlyCollection<Guid> recipients, Guid seniorId, Guid targetId, string eventType, NotificationType type,
+        string title, string message, DateTimeOffset now, NotificationTargetKind targetKind = NotificationTargetKind.Incident,
+        DateTimeOffset? expiresAt = null)
     {
         foreach (var recipient in recipients)
         {
             var eventId = Guid.CreateVersion7();
             var notification = new NotificationEvent(eventId, recipient, seniorId, type, title, message,
-                NotificationTargetKind.Incident, incidentId, null);
+                targetKind, targetId, expiresAt);
             context.OutboxMessages.Add(new OutboxMessage
             {
                 Id = eventId,

@@ -16,6 +16,7 @@ internal sealed class AutomaticAlertStateConfiguration : IEntityTypeConfiguratio
         builder.Property(row => row.CandidateInside).HasColumnName("candidate_inside");
         builder.Property(row => row.CandidateSince).HasColumnName("candidate_since");
         builder.Property(row => row.InsideZonesJson).HasColumnName("inside_zones_json");
+        builder.Property(row => row.GeofenceEnteredAt).HasColumnName("geofence_entered_at");
         builder.Property(row => row.GeofenceIncidentId).HasColumnName("geofence_incident_id");
         builder.Property(row => row.GeofenceNotificationActive).HasColumnName("geofence_notification_active");
         builder.Property(row => row.BatteryEvaluatedAt).HasColumnName("battery_evaluated_at");

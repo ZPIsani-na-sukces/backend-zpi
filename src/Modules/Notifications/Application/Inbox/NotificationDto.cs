@@ -7,5 +7,6 @@ public sealed record NotificationDto(Guid NotificationId, Guid? SeniorId, string
 public sealed record NotificationTargetDto(string Kind,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? IncidentId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? OccurrenceId,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? InvitationId);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? InvitationId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ZoneId = null);
 public sealed record NotificationDeliveryDto(string Channel, string Status, DateTimeOffset? SentAt, DateTimeOffset? DeliveredAt);

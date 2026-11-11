@@ -22,7 +22,8 @@ public sealed class NotificationMapper(NotificationsDbContext context)
             row.CreatedAt, row.ReadAt, new NotificationTargetDto(row.TargetKind.ToCamelCase(),
                 row.TargetKind == NotificationTargetKind.Incident ? row.TargetId : null,
                 row.TargetKind == NotificationTargetKind.TaskOccurrence ? row.TargetId : null,
-                row.TargetKind == NotificationTargetKind.CareInvitation ? row.TargetId : null),
+                row.TargetKind == NotificationTargetKind.CareInvitation ? row.TargetId : null,
+                row.TargetKind == NotificationTargetKind.GeoZone ? row.TargetId : null),
             lookup[row.Id].Select(delivery => new NotificationDeliveryDto(delivery.Channel.ToCamelCase(), delivery.Status.ToCamelCase(),
                 delivery.SentAt, delivery.DeliveredAt)).ToArray())).ToArray();
     }

@@ -4,5 +4,6 @@ public enum NotificationTargetKind
 {
     Incident,
     TaskOccurrence,
-    CareInvitation
+    CareInvitation,
+    GeoZone
 }

@@ -12,6 +12,7 @@ public sealed class AutomaticAlertState : VersionedEntity
     public DateTimeOffset? CandidateSince { get; set; }
     public string InsideZonesJson { get; set; } = "[]";
     public Guid? GeofenceIncidentId { get; set; }
+    public DateTimeOffset? GeofenceEnteredAt { get; set; }
     public bool GeofenceNotificationActive { get; set; }
     public DateTimeOffset? BatteryEvaluatedAt { get; set; }
     public bool BatteryArmed { get; set; } = true;
@@ -20,6 +21,7 @@ public sealed class AutomaticAlertState : VersionedEntity
 
     public void ResetGeofence()
     {
+        GeofenceEnteredAt = null;
         IsInside = null;
         CandidateInside = null;
         CandidateSince = null;
