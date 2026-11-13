@@ -1,3 +1,4 @@
+using Zpi.Modules.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Domain;
@@ -35,7 +36,14 @@ public sealed class StartEmailVerificationHandler(IdentityDbContext context, Pas
         {
             return AuthenticationResult<ChallengeDto>.Failed(AuthenticationFailure.InvalidState);
         }
-        await sender.SendAsync(next.Id, account.Email, code, cancellationToken);
+        try
+        {
+            await sender.SendAsync(new EmailCodeDelivery(next.Id, account.Email, code, next.Purpose, next.ExpiresAt), cancellationToken);
+        }
+        catch (EmailDeliveryException)
+        {
+            return AuthenticationResult<ChallengeDto>.Failed(AuthenticationFailure.DeliveryUnavailable);
+        }
         return AuthenticationResult<ChallengeDto>.Success(new ChallengeDto(next.Id, "email", next.ExpiresAt, next.ResendAfter));
     }
 }

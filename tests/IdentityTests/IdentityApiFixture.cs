@@ -172,16 +172,17 @@ public sealed class TestPhoneCodeSender : IPhoneCodeSender
 
 public sealed class TestEmailCodeSender : IEmailCodeSender
 {
-    private readonly ConcurrentDictionary<Guid, string> codes = new();
+    private readonly ConcurrentDictionary<Guid, EmailCodeDelivery> codes = new();
 
     public bool IsAvailable => true;
 
-    public Task SendAsync(Guid challengeId, string email, string code, CancellationToken cancellationToken)
+    public Task SendAsync(EmailCodeDelivery delivery, CancellationToken cancellationToken)
     {
-        codes[challengeId] = code;
+        codes[delivery.ChallengeId] = delivery;
         return Task.CompletedTask;
     }
 
-    public string CodeFor(Guid challengeId) => codes[challengeId];
+    public string CodeFor(Guid challengeId) => codes[challengeId].Code;
+    public EmailCodeDelivery DeliveryFor(Guid challengeId) => codes[challengeId];
     public bool HasCodeFor(Guid challengeId) => codes.ContainsKey(challengeId);
 }

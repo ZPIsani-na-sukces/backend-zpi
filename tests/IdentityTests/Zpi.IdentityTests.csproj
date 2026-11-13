@@ -1,6 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
+  <PropertyGroup Condition="'$(CollectCoverage)' == 'true'">
+    <CoverletOutputFormat>json,cobertura</CoverletOutputFormat>
+    <Include>[Zpi.*]*</Include>
+    <Exclude>[*]*.Migrations.*</Exclude>
+    <ExcludeByFile>**/obj/**/*.cs</ExcludeByFile>
+    <SkipAutoProps>true</SkipAutoProps>
+  </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="coverlet.msbuild">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <ProjectReference Include="../../src/Api/Zpi.Api.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />

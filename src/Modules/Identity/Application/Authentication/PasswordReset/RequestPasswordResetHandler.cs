@@ -1,3 +1,4 @@
+using Zpi.Modules.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Domain;
@@ -44,7 +45,16 @@ public sealed class RequestPasswordResetHandler(IdentityDbContext context, Passw
         if (command.Channel == ChallengeChannel.Sms)
             _ = await phoneSender.SendAsync(next.Id, destination, code, cancellationToken);
         else
-            await emailSender.SendAsync(next.Id, destination, code, cancellationToken);
+        {
+            try
+            {
+                await emailSender.SendAsync(new EmailCodeDelivery(next.Id, destination, code, next.Purpose, next.ExpiresAt), cancellationToken);
+            }
+            catch (EmailDeliveryException)
+            {
+                return AuthenticationResult<ChallengeDto>.Success(PublicResponse(command.Channel, now));
+            }
+        }
         return AuthenticationResult<ChallengeDto>.Success(new ChallengeDto(next.Id, command.Channel == ChallengeChannel.Sms ? "sms" : "email",
             next.ExpiresAt, next.ResendAfter));
     }

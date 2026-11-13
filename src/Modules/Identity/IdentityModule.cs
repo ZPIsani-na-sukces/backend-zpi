@@ -22,10 +22,7 @@ public static class IdentityModule
     {
         services.AddSingleton<TimeProvider>(new PostgresTimeProvider());
         services.AddIdentitySms(configuration);
-        if (environment.IsDevelopment())
-            services.AddSingleton<IEmailCodeSender, DevelopmentEmailCodeSender>();
-        else
-            services.AddSingleton<IEmailCodeSender, UnavailableEmailCodeSender>();
+        services.AddIdentityEmail(configuration, environment);
         services.AddScoped<IIdentityFacade, IdentityFacade>();
         services.AddIdentityApplication();
         services.AddIdentityApi();

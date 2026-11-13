@@ -1,9 +1,11 @@
+using Zpi.Modules.Identity.Contracts;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.TestHost;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Application.Accounts.VerificationStatus;
@@ -175,6 +177,9 @@ public sealed class PasswordResetTests(IdentityApiFixture fixture)
             var verifyResponse = await client.PostAsync("/api/v1/auth/email-verifications", null);
             Assert.Equal(HttpStatusCode.Accepted, verifyResponse.StatusCode);
             var verify = (await verifyResponse.Content.ReadFromJsonAsync<ChallengeDto>())!;
+            var delivery = emailSender.DeliveryFor(verify.ChallengeId);
+            Assert.Equal(ChallengePurpose.EmailVerification, delivery.Purpose);
+            Assert.Equal(verify.ExpiresAt, delivery.ExpiresAt);
             Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/email-verifications/confirm",
                 new { challengeId = verify.ChallengeId, code = emailSender.CodeFor(verify.ChallengeId) })).StatusCode);
         }
@@ -185,6 +190,9 @@ public sealed class PasswordResetTests(IdentityApiFixture fixture)
             new { channel = "email", identifier = email.ToUpperInvariant() });
         Assert.Equal(HttpStatusCode.Accepted, resetResponse.StatusCode);
         var reset = (await resetResponse.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var resetDelivery = emailSender.DeliveryFor(reset.ChallengeId);
+        Assert.Equal(ChallengePurpose.PasswordReset, resetDelivery.Purpose);
+        Assert.Equal(reset.ExpiresAt, resetDelivery.ExpiresAt);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify",
             new { challengeId = reset.ChallengeId, code = emailSender.CodeFor(reset.ChallengeId) })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
@@ -379,6 +387,40 @@ public sealed class PasswordResetTests(IdentityApiFixture fixture)
             new { challengeId = emailChallenge.ChallengeId, code = emailCode })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/password-resets",
             new { challengeId = resetChallenge.ChallengeId, code = resetCode, newPassword = NewPassword })).StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Email_delivery_failure_returns_503_for_verification_and_keeps_reset_accounts_private()
+    {
+        await using var factory = fixture.Factory().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddSingleton<IEmailCodeSender, FailingEmailCodeSender>()));
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var email = $"smtp-failure.{phone[3..]}@example.test";
+        var registration = await Register(client, phone, email, "caretaker");
+        var phoneCode = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(registration.PhoneChallenge.ChallengeId);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneCode })).StatusCode);
+        var session = (await (await client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = email, password = OldPassword, clientType = "mobile" })).Content.ReadFromJsonAsync<SessionDto>())!;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
+        var verification = await client.PostAsync("/api/v1/auth/email-verifications", null);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, verification.StatusCode);
+        Assert.Contains("deliveryUnavailable", await verification.Content.ReadAsStringAsync());
+        client.DefaultRequestHeaders.Authorization = null;
+        foreach (var identifier in new[] { email, "missing." + email })
+        {
+            var reset = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel = "email", identifier });
+            Assert.Equal(HttpStatusCode.Accepted, reset.StatusCode);
+            Assert.NotNull(await reset.Content.ReadFromJsonAsync<ChallengeDto>());
+        }
+    }
+
+    private sealed class FailingEmailCodeSender : IEmailCodeSender
+    {
+        public bool IsAvailable => true;
+        public Task SendAsync(EmailCodeDelivery delivery, CancellationToken cancellationToken) =>
+            throw new EmailDeliveryException();
     }
 
     private static async Task<RegistrationDto> Register(HttpClient client, string phone, string? email, string role)
