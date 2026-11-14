@@ -9,7 +9,7 @@ using Zpi.Modules.Notifications.Infrastructure.Persistence;
 namespace Zpi.Modules.Notifications.Application.Delivery;
 
 public sealed class NotificationDeliveryProcessor(NotificationsDbContext context, IIdentityFacade identity, ICareFacade care,
-    PushNotificationDispatcher push, ISmsNotificationSender sms, TimeProvider clock, ILogger<NotificationDeliveryProcessor> logger)
+    ISmsNotificationSender sms, TimeProvider clock, ILogger<NotificationDeliveryProcessor> logger)
 {
     public async Task ProcessAsync(IReadOnlyDictionary<string, INotificationEventSource> sources, CancellationToken cancellationToken)
     {
@@ -17,7 +17,7 @@ public sealed class NotificationDeliveryProcessor(NotificationsDbContext context
         var now = clock.GetUtcNow();
         var ids = await context.NotificationDeliveries
             .AsNoTracking()
-            .Where(row => row.Status == DeliveryStatus.Pending && (row.NextAttemptAt == null || row.NextAttemptAt <= now))
+            .Where(row => row.Channel == DeliveryChannel.Sms && row.Status == DeliveryStatus.Pending && (row.NextAttemptAt == null || row.NextAttemptAt <= now))
             .OrderBy(row => row.NextAttemptAt)
             .ThenBy(row => row.Id)
             .Select(row => row.Id)
@@ -37,7 +37,7 @@ public sealed class NotificationDeliveryProcessor(NotificationsDbContext context
     {
         var now = clock.GetUtcNow();
         var delivery = await context.NotificationDeliveries
-            .SingleOrDefaultAsync(row => row.Id == id && row.Status == DeliveryStatus.Pending &&
+            .SingleOrDefaultAsync(row => row.Id == id && row.Channel == DeliveryChannel.Sms && row.Status == DeliveryStatus.Pending &&
             (row.NextAttemptAt == null || row.NextAttemptAt <= now), cancellationToken);
         if (delivery is null) return;
         delivery.NextAttemptAt = now.AddMinutes(2);
@@ -63,9 +63,7 @@ public sealed class NotificationDeliveryProcessor(NotificationsDbContext context
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(30));
-            result = delivery.Channel == DeliveryChannel.Sms
-                ? await sms.SendAsync(delivery.Id.ToString("N"), recipient.PhoneNumber, notification.Message, timeout.Token)
-                : await push.SendAsync(delivery, notification, timeout.Token);
+            result = await sms.SendAsync(delivery.Id.ToString("N"), recipient.PhoneNumber, notification.Message, timeout.Token);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception exception)

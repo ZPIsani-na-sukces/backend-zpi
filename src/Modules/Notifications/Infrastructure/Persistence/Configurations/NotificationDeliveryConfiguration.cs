@@ -14,7 +14,7 @@ internal sealed class NotificationDeliveryConfiguration : IEntityTypeConfigurati
             table.HasCheckConstraint("ck_notification_delivery_attempts", "attempt_count >= 0");
             table.HasCheckConstraint("ck_notification_delivery_delivered", "status <> 'delivered' OR delivered_at IS NOT NULL");
             table.HasCheckConstraint("ck_notification_delivery_version", "version >= 1");
-            table.HasCheckConstraint("ck_notification_delivery_channel", "channel IN ('sms','inApp','push')");
+            table.HasCheckConstraint("ck_notification_delivery_channel", "channel IN ('sms','inApp')");
             table.HasCheckConstraint("ck_notification_delivery_status", "status IN ('pending','sent','delivered','failed','cancelled')");
         });
         builder.HasKey(x => x.Id);

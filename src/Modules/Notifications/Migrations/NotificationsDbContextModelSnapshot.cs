@@ -232,78 +232,13 @@ namespace Zpi.Modules.Notifications.Migrations
                         {
                             t.HasCheckConstraint("ck_notification_delivery_attempts", "attempt_count >= 0");
 
-                            t.HasCheckConstraint("ck_notification_delivery_channel", "channel IN ('sms','inApp','push')");
+                            t.HasCheckConstraint("ck_notification_delivery_channel", "channel IN ('sms','inApp')");
 
                             t.HasCheckConstraint("ck_notification_delivery_delivered", "status <> 'delivered' OR delivered_at IS NOT NULL");
 
                             t.HasCheckConstraint("ck_notification_delivery_status", "status IN ('pending','sent','delivered','failed','cancelled')");
 
                             t.HasCheckConstraint("ck_notification_delivery_version", "version >= 1");
-                        });
-                });
-
-            modelBuilder.Entity("Zpi.Modules.Notifications.Domain.PushDeviceToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<Guid>("AccountId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("account_id");
-
-                    b.Property<Guid>("InstallationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("installation_id");
-
-                    b.Property<string>("Platform")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("platform");
-
-                    b.Property<DateTimeOffset>("RegisteredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("registered_at");
-
-                    b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("revoked_at");
-
-                    b.Property<Guid>("SessionId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("session_id");
-
-                    b.Property<string>("Token")
-                        .IsRequired()
-                        .HasMaxLength(4096)
-                        .HasColumnType("character varying(4096)")
-                        .HasColumnName("token");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("token_hash");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.HasIndex("SessionId", "InstallationId")
-                        .IsUnique()
-                        .HasFilter("revoked_at IS NULL");
-
-                    b.ToTable("push_device_token", "notifications", t =>
-                        {
-                            t.HasCheckConstraint("ck_push_device_token_platform", "platform IN ('android','ios')");
                         });
                 });
 

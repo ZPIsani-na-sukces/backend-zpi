@@ -129,14 +129,14 @@ public sealed class CascadeDeletionTests(IdentityApiFixture fixture)
             TargetKind = NotificationTargetKind.Incident, TargetId = Guid.CreateVersion7(), CreatedAt = DateTimeOffset.UtcNow
         }).ToArray();
         context.Notifications.AddRange(notifications);
-        context.NotificationDeliveries.AddRange(notifications.SelectMany(notification => new[] { DeliveryChannel.InApp, DeliveryChannel.Sms, DeliveryChannel.Push }
+        context.NotificationDeliveries.AddRange(notifications.SelectMany(notification => new[] { DeliveryChannel.InApp, DeliveryChannel.Sms }
             .Select(channel => new NotificationDelivery { NotificationId = notification.Id, Channel = channel, Status = DeliveryStatus.Pending })));
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
         await context.Notifications.Where(row => row.Id == notifications[0].Id).ExecuteDeleteAsync();
         Assert.False(await context.NotificationDeliveries.AnyAsync(row => row.NotificationId == notifications[0].Id));
         Assert.True(await context.Notifications.AnyAsync(row => row.Id == notifications[1].Id));
-        Assert.Equal(3, await context.NotificationDeliveries.CountAsync(row => row.NotificationId == notifications[1].Id));
+        Assert.Equal(2, await context.NotificationDeliveries.CountAsync(row => row.NotificationId == notifications[1].Id));
     }
 
     [PostgresFact]

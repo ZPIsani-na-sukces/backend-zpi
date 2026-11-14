@@ -15,7 +15,6 @@ using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.Notifications.Application.Delivery;
 using Zpi.Modules.Notifications.Application.Inbox;
-using Zpi.Modules.Notifications.Application.PushTokens;
 using Zpi.Modules.Notifications.Contracts;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Modules.Notifications.Infrastructure.Persistence;
@@ -34,73 +33,11 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
     { Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) } };
 
     [PostgresFact]
-    public async Task Push_registration_rotates_tokens_is_idempotent_and_protects_ownership()
-    {
-        await using var factory = Factory(new TestClock());
-        using var senior = await Actor(factory, AccountRole.Senior);
-        using var other = await Actor(factory, AccountRole.Senior);
-        var installation = Guid.CreateVersion7();
-        var token = "push-" + Guid.CreateVersion7();
-        var first = await Register(senior, installation, token);
-        var repeated = await Register(senior, installation, token);
-        Assert.Equal(first.RegistrationId, repeated.RegistrationId);
-        await Error(await Send(other.Client, HttpMethod.Post, "/api/v1/me/push-tokens", new { installationId = Guid.CreateVersion7(), platform = "android", token }), 409, "tokenAlreadyRegistered");
-        var rotated = await Register(senior, installation, token + "-new");
-        Assert.NotEqual(first.RegistrationId, rotated.RegistrationId);
-        await using var scope = factory.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<NotificationsDbContext>();
-        Assert.NotNull((await db.PushDeviceTokens.FindAsync(first.RegistrationId))!.RevokedAt);
-        Assert.Single(await db.PushDeviceTokens.Where(row => row.AccountId == senior.Id && row.RevokedAt == null).ToListAsync());
-        Assert.False(db.Database.HasPendingModelChanges());
-        await Error(await other.Client.DeleteAsync("/api/v1/me/push-tokens/" + rotated.RegistrationId), 404, "resourceNotFound");
-        await Status(await senior.Client.DeleteAsync("/api/v1/me/push-tokens/" + rotated.RegistrationId), 204);
-        await Status(await senior.Client.DeleteAsync("/api/v1/me/push-tokens/" + rotated.RegistrationId), 204);
-        await Error(await Send(senior.Client, HttpMethod.Post, "/api/v1/me/push-tokens", new { installationId = Guid.Empty, platform = "android", token = "bad token" }), 400, "validationFailed");
-    }
-
-    [PostgresFact]
-    public async Task Logout_removes_only_the_current_session_push_registration_after_transfer()
-    {
-        await using var factory = Factory(new TestClock());
-        using var senior = await Actor(factory, AccountRole.Senior);
-        var installation = Guid.CreateVersion7();
-        var token = "transfer-" + Guid.CreateVersion7();
-        var registration = await Register(senior, installation, token);
-        using var second = factory.CreateClient();
-        var login = await second.PostAsJsonAsync("/api/v1/auth/login", new { identifier = senior.Phone, password = Password, clientType = "mobile" });
-        await Status(login, 200);
-        var session = (await login.Content.ReadFromJsonAsync<SessionDto>())!;
-        second.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
-        var moved = await Send(second, HttpMethod.Post, "/api/v1/me/push-tokens", new { installationId = installation, platform = "android", token });
-        await Status(moved, 200);
-        Assert.Equal(registration.RegistrationId, (await moved.Content.ReadFromJsonAsync<PushTokenDto>())!.RegistrationId);
-        await Status(await senior.Client.PostAsync("/api/v1/auth/logout", null), 204);
-        await using (var scope = factory.Services.CreateAsyncScope())
-            Assert.True(await scope.ServiceProvider.GetRequiredService<NotificationsDbContext>().PushDeviceTokens.AnyAsync(row => row.Id == registration.RegistrationId));
-        await Status(await second.PostAsync("/api/v1/auth/logout", null), 204);
-        await using (var scope = factory.Services.CreateAsyncScope())
-            Assert.False(await scope.ServiceProvider.GetRequiredService<NotificationsDbContext>().PushDeviceTokens.AnyAsync(row => row.Id == registration.RegistrationId));
-    }
-
-    [PostgresFact]
-    public async Task Push_registration_has_a_limit_but_allows_rotation_at_the_limit()
-    {
-        await using var factory = Factory(new TestClock());
-        using var actor = await Actor(factory, AccountRole.Senior);
-        var firstInstallation = Guid.CreateVersion7();
-        await Register(actor, firstInstallation, "limit-" + Guid.CreateVersion7());
-        for (var i = 1; i < 10; i++) await Register(actor, Guid.CreateVersion7(), "limit-" + Guid.CreateVersion7());
-        await Error(await Send(actor.Client, HttpMethod.Post, "/api/v1/me/push-tokens", new { installationId = Guid.CreateVersion7(), platform = "ios", token = "limit-" + Guid.CreateVersion7() }), 409, "tokenLimitReached");
-        await Register(actor, firstInstallation, "rotated-" + Guid.CreateVersion7());
-    }
-
-    [PostgresFact]
     public async Task Routine_reminders_are_queued_atomically_and_sent_once_per_term_with_safe_payloads()
     {
         var clock = new TestClock();
         await using var factory = Factory(clock);
         using var senior = await Actor(factory, AccountRole.Senior);
-        await Register(senior, Guid.CreateVersion7(), "push-" + Guid.CreateVersion7());
         var occurrence = await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
         await Process(factory);
         await Process(factory);
@@ -108,14 +45,14 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         var first = Assert.Single(inbox.Items);
         Assert.Equal(occurrence, first.Target.OccurrenceId);
         Assert.DoesNotContain("Secret medication", first.Message);
-        Assert.Contains(first.Deliveries, row => row.Channel == "push" && row.Status == "sent" && row.DeliveredAt == null);
-        Assert.Contains(first.Deliveries, row => row.Channel == "inApp" && row.Status == "delivered");
+        Assert.Equal("inApp", Assert.Single(first.Deliveries).Channel);
+        Assert.Equal("delivered", Assert.Single(first.Deliveries).Status);
+        Assert.Empty(factory.Services.GetRequiredService<RecordingSender>().Sms);
         clock.Advance(TimeSpan.FromMinutes(15));
         await Process(factory);
         await Process(factory);
         var later = await Inbox(senior);
         Assert.Equal(2, later.Items.Count);
-        Assert.Equal(2, factory.Services.GetRequiredService<RecordingSender>().Push.Count(row => row.NotificationId == first.NotificationId || later.Items.Any(item => item.NotificationId == row.NotificationId)));
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<RoutinesDbContext>();
         Assert.False(db.Database.HasPendingModelChanges());
@@ -141,107 +78,6 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         }
         await Process(factory);
         Assert.Empty((await Inbox(senior)).Items);
-        Assert.Empty(factory.Services.GetRequiredService<RecordingSender>().Push);
-    }
-
-    [PostgresFact]
-    public async Task Reminder_delivery_rechecks_occurrence_state_between_outbox_and_send()
-    {
-        var clock = new TestClock();
-        await using var factory = Factory(clock);
-        using var senior = await Actor(factory, AccountRole.Senior);
-        await Register(senior, Guid.CreateVersion7(), "push-" + Guid.CreateVersion7());
-        var id = await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var source = scope.ServiceProvider.GetRequiredService<RoutineReminderSource>();
-            await source.PrepareAsync(CancellationToken.None);
-            var row = (await source.ReadPendingAsync(100, CancellationToken.None)).Single(item => JsonSerializer.Deserialize<NotificationEvent>(item.Payload)!.TargetId == id);
-            await scope.ServiceProvider.GetRequiredService<INotificationsFacade>().EnqueueAsync(source.Name, JsonSerializer.Deserialize<NotificationEvent>(row.Payload)!, CancellationToken.None);
-            var db = scope.ServiceProvider.GetRequiredService<RoutinesDbContext>();
-            var occurrence = (await db.TaskOccurrences.FindAsync(id))!;
-            occurrence.Status = OccurrenceStatus.Confirmed;
-            await db.SaveChangesAsync();
-        }
-        await Process(factory);
-        Assert.Contains(Assert.Single((await Inbox(senior)).Items).Deliveries, row => row.Channel == "push" && row.Status == "cancelled");
-        Assert.Empty(factory.Services.GetRequiredService<RecordingSender>().Push);
-    }
-
-    [PostgresFact]
-    public async Task Failed_push_retries_with_the_same_idempotency_key_and_does_not_claim_delivery_receipts()
-    {
-        var clock = new TestClock();
-        await using var factory = Factory(clock);
-        using var senior = await Actor(factory, AccountRole.Senior);
-        await Register(senior, Guid.CreateVersion7(), "push-" + Guid.CreateVersion7());
-        await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
-        var sender = factory.Services.GetRequiredService<RecordingSender>();
-        sender.Failures = 1;
-        await Process(factory);
-        var notification = Assert.Single((await Inbox(senior)).Items);
-        Assert.Contains(notification.Deliveries, row => row.Channel == "push" && row.Status == "pending");
-        await Process(factory);
-        Assert.Single(sender.Push);
-        clock.Advance(TimeSpan.FromSeconds(16));
-        await Process(factory);
-        Assert.Equal(2, sender.Push.Count);
-        Assert.Equal(sender.Push[0].Key, sender.Push[1].Key);
-        Assert.Contains(Assert.Single((await Inbox(senior)).Items).Deliveries, row => row.Channel == "push" && row.Status == "sent" && row.DeliveredAt == null);
-    }
-
-    [PostgresFact]
-    public async Task Cancellation_during_push_keeps_the_claim_until_expiry_and_retries_with_the_same_key()
-    {
-        var clock = new TestClock();
-        await using var factory = Factory(clock);
-        using var senior = await Actor(factory, AccountRole.Senior);
-        await Register(senior, Guid.CreateVersion7(), "cancel-" + Guid.CreateVersion7());
-        await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
-        var sender = factory.Services.GetRequiredService<RecordingSender>();
-        using var stopping = new CancellationTokenSource();
-        sender.BeforePush = stopping.Cancel;
-        await using (var scope = factory.Services.CreateAsyncScope())
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-                scope.ServiceProvider.GetRequiredService<NotificationProcessor>().ProcessAsync(stopping.Token));
-        sender.BeforePush = null;
-        var notification = Assert.Single((await Inbox(senior)).Items);
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var delivery = await scope.ServiceProvider.GetRequiredService<NotificationsDbContext>().NotificationDeliveries
-                .SingleAsync(row => row.NotificationId == notification.NotificationId && row.Channel == DeliveryChannel.Push);
-            Assert.Equal(DeliveryStatus.Pending, delivery.Status);
-            Assert.Equal(1, delivery.AttemptCount);
-            Assert.Equal(clock.GetUtcNow().AddMinutes(2), delivery.NextAttemptAt);
-            Assert.Null(delivery.LastErrorCode);
-        }
-        await Process(factory);
-        Assert.Single(sender.Push);
-        clock.Advance(TimeSpan.FromMinutes(2).Add(TimeSpan.FromSeconds(1)));
-        await Process(factory);
-        Assert.Equal(2, sender.Push.Count);
-        Assert.Equal(sender.Push[0].Key, sender.Push[1].Key);
-        Assert.Contains(Assert.Single((await Inbox(senior)).Items).Deliveries,
-            row => row.Channel == "push" && row.Status == "sent");
-    }
-
-    [PostgresFact]
-    public async Task Invalid_or_expired_push_sessions_are_not_used()
-    {
-        var clock = new TestClock();
-        await using var factory = Factory(clock);
-        using var senior = await Actor(factory, AccountRole.Senior);
-        var registration = await Register(senior, Guid.CreateVersion7(), "invalid-" + Guid.CreateVersion7());
-        await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
-        var sender = factory.Services.GetRequiredService<RecordingSender>();
-        sender.InvalidToken = true;
-        await Process(factory);
-        await using var scope = factory.Services.CreateAsyncScope();
-        Assert.NotNull((await scope.ServiceProvider.GetRequiredService<NotificationsDbContext>().PushDeviceTokens.FindAsync(registration.RegistrationId))!.RevokedAt);
-        Assert.Single(sender.Push);
-        clock.Advance(TimeSpan.FromMinutes(1));
-        await Process(factory);
-        Assert.Single(sender.Push);
     }
 
     [PostgresFact]
@@ -335,14 +171,12 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         var clock = new TestClock();
         await using var factory = Factory(clock);
         using var senior = await Actor(factory, AccountRole.Senior);
-        await Register(senior, Guid.CreateVersion7(), "push-" + Guid.CreateVersion7());
         var source = factory.Services.GetRequiredService<TestSource>();
         source.Event = new NotificationEvent(Guid.CreateVersion7(), senior.Id, senior.Id, NotificationType.LowBattery, "Bateria", "Podłącz ładowarkę.", NotificationTargetKind.Incident, Guid.CreateVersion7(), null);
         source.FailCompletion = true;
         await Process(factory);
         await Task.WhenAll(Process(factory), Process(factory));
         Assert.Single((await Inbox(senior)).Items);
-        Assert.Single(factory.Services.GetRequiredService<RecordingSender>().Push);
         Assert.True(source.Completed);
     }
 
@@ -366,7 +200,6 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         await using var check = factory.Services.CreateAsyncScope();
         var ownIds = await check.ServiceProvider.GetRequiredService<NotificationsDbContext>().Notifications
             .Where(row => row.RecipientAccountId == senior.Id).Select(row => row.Id).ToArrayAsync();
-        Assert.DoesNotContain(factory.Services.GetRequiredService<RecordingSender>().Push, row => ownIds.Contains(row.NotificationId));
         await using var cleanup = factory.Services.CreateAsyncScope();
         foreach (var service in cleanup.ServiceProvider.GetServices<IAccountDataCleanup>()) await service.DeleteAsync(senior.Id, CancellationToken.None);
         var db = cleanup.ServiceProvider.GetRequiredService<RoutinesDbContext>();
@@ -398,7 +231,7 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
-    public async Task Anonymous_requests_cannot_use_notifications_or_push_tokens()
+    public async Task Anonymous_requests_cannot_use_notifications()
     {
         await using var factory = Factory(new TestClock());
         using var client = factory.CreateClient();
@@ -406,32 +239,6 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         await Error(await client.GetAsync("/api/v1/me/notifications"), 401, "unauthenticated");
         await Error(await client.GetAsync("/api/v1/me/notifications/" + id), 401, "unauthenticated");
         await Error(await client.PutAsync("/api/v1/me/notifications/" + id + "/read", null), 401, "unauthenticated");
-        await Error(await Send(client, HttpMethod.Post, "/api/v1/me/push-tokens", new { installationId = id, platform = "android", token = "x" }), 401, "unauthenticated");
-        await Error(await client.DeleteAsync("/api/v1/me/push-tokens/" + id), 401, "unauthenticated");
-    }
-
-
-    [PostgresFact]
-    public async Task Transient_provider_errors_stop_after_five_attempts()
-    {
-        var clock = new TestClock();
-        await using var factory = Factory(clock);
-        using var senior = await Actor(factory, AccountRole.Senior);
-        await Register(senior, Guid.CreateVersion7(), "retry-" + Guid.CreateVersion7());
-        await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
-        factory.Services.GetRequiredService<RecordingSender>().Failures = 100;
-        foreach (var delay in new[] { 0, 16, 31, 61, 121 })
-        {
-            clock.Advance(TimeSpan.FromSeconds(delay));
-            await Process(factory);
-        }
-        var item = Assert.Single((await Inbox(senior)).Items);
-        Assert.Contains(item.Deliveries, row => row.Channel == "push" && row.Status == "failed");
-        var sender = factory.Services.GetRequiredService<RecordingSender>();
-        Assert.Equal(5, sender.Push.Count(row => row.NotificationId == item.NotificationId));
-        clock.Advance(TimeSpan.FromSeconds(1));
-        await Process(factory);
-        Assert.Equal(5, sender.Push.Count(row => row.NotificationId == item.NotificationId));
     }
 
     [PostgresFact]
@@ -464,28 +271,6 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         Assert.Equal("notificationProcessingFailed", row.LastError);
         Assert.NotNull(row.NextAttemptAt);
     }
-
-    [PostgresFact]
-    public async Task Expired_sessions_are_rechecked_even_if_a_push_token_remains_in_the_database()
-    {
-        var clock = new TestClock();
-        await using var factory = Factory(clock);
-        using var senior = await Actor(factory, AccountRole.Senior);
-        var token = await Register(senior, Guid.CreateVersion7(), "expired-" + Guid.CreateVersion7());
-        await SeedOccurrence(factory, senior.Id, clock.GetUtcNow().AddMinutes(15));
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var row = (await scope.ServiceProvider.GetRequiredService<NotificationsDbContext>().PushDeviceTokens.FindAsync(token.RegistrationId))!;
-            await scope.ServiceProvider.GetRequiredService<Zpi.Modules.Identity.Application.Sessions.ISessionStore>().RevokeAsync(row.SessionId, CancellationToken.None);
-        }
-        await Process(factory);
-        await using var check = factory.Services.CreateAsyncScope();
-        var ownIds = await check.ServiceProvider.GetRequiredService<NotificationsDbContext>().Notifications
-            .Where(row => row.RecipientAccountId == senior.Id).Select(row => row.Id).ToArrayAsync();
-        Assert.DoesNotContain(factory.Services.GetRequiredService<RecordingSender>().Push, row => ownIds.Contains(row.NotificationId));
-        Assert.NotNull((await check.ServiceProvider.GetRequiredService<NotificationsDbContext>().PushDeviceTokens.FindAsync(token.RegistrationId))!.RevokedAt);
-    }
-
 
     [PostgresFact]
     public async Task Inactive_task_does_not_send_a_recent_past_occurrence_even_when_history_remains_pending()
@@ -526,24 +311,6 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         Assert.Single(times.Distinct());
     }
 
-
-    [PostgresFact]
-    public async Task Concurrent_delivery_processors_only_claim_one_pending_delivery()
-    {
-        await using var factory = Factory(new TestClock());
-        using var senior = await Actor(factory, AccountRole.Senior);
-        await Register(senior, Guid.CreateVersion7(), "parallel-" + Guid.CreateVersion7());
-        await using (var scope = factory.Services.CreateAsyncScope())
-            await scope.ServiceProvider.GetRequiredService<INotificationsFacade>().EnqueueAsync("test",
-                new NotificationEvent(Guid.CreateVersion7(), senior.Id, senior.Id, NotificationType.LowBattery,
-                    "Bateria", "Podłącz ładowarkę.", NotificationTargetKind.Incident, Guid.CreateVersion7(), null), CancellationToken.None);
-        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => Process(factory)));
-        var item = Assert.Single((await Inbox(senior)).Items);
-        Assert.Single(factory.Services.GetRequiredService<RecordingSender>().Push, row => row.NotificationId == item.NotificationId);
-        Assert.Contains(item.Deliveries, row => row.Channel == "push" && row.Status == "sent");
-    }
-
-
     [PostgresFact]
     public async Task Inactive_recipients_do_not_block_following_reminder_batches()
     {
@@ -568,12 +335,39 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         Assert.False(await db.OutboxMessages.AnyAsync(row => EF.Functions.JsonContains(row.Payload, payload)));
     }
 
+    [PostgresFact]
+    public async Task Sms_retries_stop_after_five_attempts_with_a_stable_key()
+    {
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        await using (var scope = factory.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<INotificationsFacade>().EnqueueAsync("test",
+                new NotificationEvent(Guid.CreateVersion7(), caretaker.Id, senior.Id, NotificationType.Sos,
+                    "Alarm", "Otwórz aplikację.", NotificationTargetKind.Incident, Guid.CreateVersion7(), null), CancellationToken.None);
+        var sender = factory.Services.GetRequiredService<RecordingSender>();
+        sender.Failures = 100;
+        foreach (var delay in new[] { 0, 16, 31, 61, 121 })
+        {
+            clock.Advance(TimeSpan.FromSeconds(delay));
+            await Process(factory);
+        }
+        var item = Assert.Single((await Inbox(caretaker)).Items);
+        Assert.Contains(item.Deliveries, row => row.Channel == "sms" && row.Status == "failed");
+        Assert.Equal(5, sender.Sms.Count);
+        Assert.Single(sender.Sms.Distinct());
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await Process(factory);
+        Assert.Equal(5, sender.Sms.Count);
+    }
+
     private WebApplicationFactory<Program> Factory(TestClock clock) => fixture.Factory().WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<TimeProvider>(clock);
             services.AddSingleton<RecordingSender>();
-            services.AddSingleton<IPushNotificationSender>(provider => provider.GetRequiredService<RecordingSender>());
             services.AddSingleton<ISmsNotificationSender>(provider => provider.GetRequiredService<RecordingSender>());
             services.AddSingleton<TestSource>();
             services.AddSingleton<INotificationEventSource>(provider => provider.GetRequiredService<TestSource>());
@@ -583,12 +377,6 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<NotificationProcessor>().ProcessAsync(CancellationToken.None);
-    }
-    private static async Task<PushTokenDto> Register(TestActor actor, Guid installation, string token)
-    {
-        var response = await Send(actor.Client, HttpMethod.Post, "/api/v1/me/push-tokens", new { installationId = installation, platform = "android", token });
-        await Status(response, 200);
-        return (await response.Content.ReadFromJsonAsync<PushTokenDto>())!;
     }
     private static async Task<CursorPageDto<NotificationDto>> Inbox(TestActor actor, string? query = null) =>
         (await actor.Client.GetFromJsonAsync<CursorPageDto<NotificationDto>>("/api/v1/me/notifications" + (query is null ? "" : "?" + query)))!;
@@ -631,24 +419,17 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         await db.SaveChangesAsync();
         return occurrence.Id;
     }
-    private sealed class RecordingSender : IPushNotificationSender, ISmsNotificationSender
+    private sealed class RecordingSender : ISmsNotificationSender
     {
-        public List<(string Key, Guid NotificationId)> Push { get; } = [];
         public List<string> Sms { get; } = [];
         public int Failures { get; set; }
-        public bool InvalidToken { get; set; }
-        public Action? BeforePush { get; set; }
-        public Task<DeliverySendResult> SendAsync(string idempotencyKey, string token, string title, string message, Guid notificationId, CancellationToken cancellationToken)
-        {
-            lock (Push) Push.Add((idempotencyKey, notificationId));
-            BeforePush?.Invoke();
-            cancellationToken.ThrowIfCancellationRequested();
-            if (InvalidToken) return Task.FromResult(new DeliverySendResult(false, ErrorCode: "invalidToken", Retryable: false, InvalidToken: true));
-            if (Failures-- > 0) return Task.FromResult(new DeliverySendResult(false, ErrorCode: "temporary"));
-            return Task.FromResult(new DeliverySendResult(true, idempotencyKey));
-        }
         public Task<DeliverySendResult> SendAsync(string idempotencyKey, string phoneNumber, string message, CancellationToken cancellationToken)
-        { lock (Sms) Sms.Add(idempotencyKey); return Task.FromResult(new DeliverySendResult(true, idempotencyKey)); }
+        {
+            lock (Sms) Sms.Add(idempotencyKey);
+            return Task.FromResult(Failures-- > 0
+                ? new DeliverySendResult(false, ErrorCode: "temporary")
+                : new DeliverySendResult(true, idempotencyKey));
+        }
     }
     private sealed class TestSource : INotificationEventSource
     {

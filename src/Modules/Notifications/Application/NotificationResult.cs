@@ -5,4 +5,4 @@ public sealed record NotificationResult<T>(T? Value, NotificationFailure? Failur
     public static NotificationResult<T> Success(T value) => new(value, null);
     public static NotificationResult<T> Failed(NotificationFailure failure) => new(default, failure);
 }
-public enum NotificationFailure { ResourceNotFound, TokenAlreadyRegistered, TokenLimitReached }
+public enum NotificationFailure { ResourceNotFound }

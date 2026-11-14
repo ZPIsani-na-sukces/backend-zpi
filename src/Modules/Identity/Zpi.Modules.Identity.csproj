@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <EmbeddedResource Include="Infrastructure/Email/Templates/senioro-logo.png" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="MailKit" />
     <PackageReference Include="StackExchange.Redis" />

@@ -52,7 +52,6 @@ internal sealed class NotificationsFacade(NotificationsDbContext context, IIdent
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    private static DeliveryChannel? ExternalChannel(string role, NotificationType type) => role == AccountRoles.Senior
-        ? DeliveryChannel.Push
-        : type is NotificationType.Sos or NotificationType.GeofenceExit or NotificationType.GeofenceEntry ? DeliveryChannel.Sms : null;
+    private static DeliveryChannel? ExternalChannel(string role, NotificationType type) => role == AccountRoles.Caretaker &&
+        type is NotificationType.Sos or NotificationType.GeofenceExit or NotificationType.GeofenceEntry ? DeliveryChannel.Sms : null;
 }

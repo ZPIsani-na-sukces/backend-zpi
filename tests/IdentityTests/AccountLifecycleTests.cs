@@ -27,7 +27,7 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
     private const string Password = "A long password 123!";
 
     [PostgresFact]
-    public async Task Logout_removes_session_refresh_token_and_push_registration_but_keeps_other_session()
+    public async Task Logout_removes_session_refresh_token_but_keeps_other_session()
     {
         await using var factory = fixture.Factory();
         using var client = factory.CreateClient();
@@ -35,21 +35,6 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         var first = await Login(client, phone);
         var second = await Login(client, phone);
         var sessionId = Id(first);
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var notifications = scope.ServiceProvider.GetRequiredService<NotificationsDbContext>();
-            notifications.PushDeviceTokens.Add(new PushDeviceToken
-            {
-                AccountId = id,
-                SessionId = sessionId,
-                InstallationId = Guid.CreateVersion7(),
-                Token = "push-token",
-                TokenHash = TokenService.HashSecret(Guid.CreateVersion7().ToString()),
-                RegisteredAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow
-            });
-            await notifications.SaveChangesAsync();
-        }
         Bearer(client, first);
         var logout = await client.PostAsync("/api/v1/auth/logout", null);
         Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
@@ -59,8 +44,6 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         var store = factory.Services.GetRequiredService<ISessionStore>();
         Assert.Null(await store.GetAsync(sessionId, CancellationToken.None));
         Assert.Null(await store.FindByRefreshTokenAsync(TokenService.HashSecret(first.RefreshToken!), CancellationToken.None));
-        await using (var scope = factory.Services.CreateAsyncScope())
-            Assert.False(await scope.ServiceProvider.GetRequiredService<NotificationsDbContext>().PushDeviceTokens.AnyAsync(row => row.SessionId == sessionId));
         Bearer(client, second);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/v1/me")).StatusCode);
     }

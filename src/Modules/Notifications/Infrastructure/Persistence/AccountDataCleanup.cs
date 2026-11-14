@@ -10,8 +10,6 @@ internal sealed class AccountDataCleanup(NotificationsDbContext context) : IAcco
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         await context.Notifications
             .Where(row => row.RecipientAccountId == accountId || row.SeniorId == accountId).ExecuteDeleteAsync(cancellationToken);
-        await context.PushDeviceTokens
-            .Where(row => row.AccountId == accountId).ExecuteDeleteAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 }
