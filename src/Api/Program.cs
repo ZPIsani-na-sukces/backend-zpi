@@ -32,7 +32,8 @@ app.UseStatusCodePages();
 app.UseRouting();
 app.UseCors();
 app.UseAuthentication();
-app.UseRateLimiter();
+if (!app.Environment.IsDevelopment())
+    app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
 app.MapOpenApi();
