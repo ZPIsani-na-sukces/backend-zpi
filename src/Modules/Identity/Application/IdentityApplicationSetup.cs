@@ -13,6 +13,8 @@ using Zpi.Modules.Identity.Application.Authentication.PhoneVerification;
 using Zpi.Modules.Identity.Application.Authentication.Refresh;
 using Zpi.Modules.Identity.Application.Authentication.Register;
 using Zpi.Modules.Identity.Application.Sessions;
+using Zpi.Modules.Identity.Application.Accounts.UpdateEmail;
+using Zpi.Modules.Identity.Application.Accounts.UpdatePhoneNumber;
 using Zpi.Modules.Identity.Application.Accounts.UpdateProfile;
 using Zpi.Modules.Identity.Application.Accounts.VerificationStatus;
 
@@ -39,6 +41,10 @@ public static class IdentityApplicationSetup
         services.AddScoped<CurrentAccountHandler>();
         services.AddScoped<AccountVerificationStatusHandler>();
         services.AddScoped<UpdateProfileHandler>();
+        services.AddScoped<StartEmailChangeHandler>();
+        services.AddScoped<UpdateEmailHandler>();
+        services.AddScoped<StartPhoneNumberChangeHandler>();
+        services.AddScoped<UpdatePhoneNumberHandler>();
         services.AddScoped<DeleteAccountHandler>();
         services.AddScoped<SessionRevoker>();
         services.AddScoped<AccountDeletionProcessor>();
