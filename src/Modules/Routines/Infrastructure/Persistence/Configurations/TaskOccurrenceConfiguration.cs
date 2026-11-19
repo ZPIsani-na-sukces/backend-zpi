@@ -35,8 +35,6 @@ internal sealed class TaskOccurrenceConfiguration : IEntityTypeConfiguration<Tas
         builder.Property(x => x.DueReminderQueuedAt).HasColumnName("due_reminder_queued_at");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         builder.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken();
-        builder.HasIndex(x => new { x.RoutineTaskId, x.ScheduleRevision, x.LocalDate, x.LocalTime }).IsUnique();
-        builder.HasIndex(x => new { x.RoutineTaskId, x.ScheduleRevision, x.ScheduledAt }).IsUnique();
         builder.HasIndex(x => new { x.SeniorId, x.ScheduledAt });
         builder.HasIndex(x => x.ScheduledAt).HasFilter("status = 'pending'");
         builder.Property(x => x.TimeZone).HasMaxLength(100);
