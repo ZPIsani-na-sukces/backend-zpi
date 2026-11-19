@@ -56,7 +56,7 @@ public sealed class StartEmailChangeHandler(IdentityDbContext context, PasswordH
             return AuthenticationResult<ChallengeDto>.Failed(AuthenticationFailure.InvalidState);
         }
 
-        await sender.SendAsync(challenge.Id, email, code, cancellationToken);
+        await sender.SendAsync(new EmailCodeDelivery(challenge.Id, email, code, challenge.Purpose, challenge.ExpiresAt), cancellationToken);
         return AuthenticationResult<ChallengeDto>.Success(new ChallengeDto(challenge.Id, "email", challenge.ExpiresAt, challenge.ResendAfter));
     }
 }
