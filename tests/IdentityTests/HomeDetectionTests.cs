@@ -64,7 +64,15 @@ public sealed partial class GeofenceTests
     [InlineData(500, "private provider details", 503, "temporarilyUnavailable")]
     [InlineData(200, "not json", 503, "temporarilyUnavailable")]
     [InlineData(200, "{}", 503, "temporarilyUnavailable")]
+    [InlineData(200, "[]", 503, "temporarilyUnavailable")]
     [InlineData(200, "{\"error\":\"provider failure\"}", 503, "temporarilyUnavailable")]
+    [InlineData(200, "{\"display_name\":true,\"address\":{}}", 503, "temporarilyUnavailable")]
+    [InlineData(200, "{\"display_name\":\" \",\"address\":{}}", 503, "temporarilyUnavailable")]
+    [InlineData(200, "{\"display_name\":\"Warszawa\"}", 503, "temporarilyUnavailable")]
+    [InlineData(200, "{\"display_name\":\"Warszawa\",\"address\":[]}", 503, "temporarilyUnavailable")]
+    [InlineData(200, "{\"display_name\":\"Warszawa\",\"address\":{\"country_code\":\"POL\"}}", 503, "temporarilyUnavailable")]
+    [InlineData(200, "{\"display_name\":\"Warszawa\",\"address\":{\"country_code\":\"P1\"}}", 503, "temporarilyUnavailable")]
+    [InlineData(200, "{\"display_name\":\"Warszawa\",\"address\":{\"country_code\":\"1L\"}}", 503, "temporarilyUnavailable")]
     public async Task Home_detection_translates_provider_errors_without_exposing_the_response(
         int providerStatus, string body, int status, string code)
     {
@@ -97,6 +105,28 @@ public sealed partial class GeofenceTests
             new DetectAddressRequest(52, 21)), 503, "temporarilyUnavailable");
     }
 
+    [PostgresFact]
+    public async Task Home_detection_ignores_non_text_optional_address_fields_and_recovers_from_disconnect()
+    {
+        var provider = new GeocodingProvider
+        {
+            FailFirstCall = true,
+            Body = """{"display_name":"Warszawa","address":{"house_number":123,"city":"Warszawa"}}"""
+        };
+        await using var factory = GeocodingFactory(provider);
+        using var senior = await Actor(factory, AccountRole.Senior);
+        var path = Base(senior.Id) + "/home-address/detect";
+        var request = new DetectAddressRequest(52, 21);
+        await Error(await senior.Client.PostAsJsonAsync(path, request), 503, "temporarilyUnavailable");
+        using var response = await senior.Client.PostAsJsonAsync(path, request);
+        await Status(response, 200);
+        var result = (await response.Content.ReadFromJsonAsync<DetectedAddressDto>())!;
+        Assert.Equal("Warszawa", result.Address.City);
+        Assert.Null(result.Address.CountryCode);
+        Assert.Null(result.Address.HouseNumber);
+        Assert.Equal(2, provider.Calls);
+    }
+
     private WebApplicationFactory<Program> GeocodingFactory(GeocodingProvider provider, string apiKey = "pk.test+&?=") =>
         Factory().WithWebHostBuilder(builder =>
         {
@@ -113,6 +143,7 @@ public sealed partial class GeofenceTests
         public int Status { get; init; } = 200;
         public string Body { get; init; } = """{"display_name":"Warszawa, Polska","lat":"52.2","lon":"21.0","address":{"city":"Warszawa","country":"Polska","country_code":"pl"}}""";
         public bool Timeout { get; init; }
+        public bool FailFirstCall { get; init; }
         public string? LastUri { get; private set; }
         public string? LastUserAgent { get; private set; }
 
@@ -122,6 +153,7 @@ public sealed partial class GeofenceTests
             LastUri = request.RequestUri!.ToString();
             LastUserAgent = request.Headers.UserAgent.ToString();
             if (Timeout) throw new TaskCanceledException("Provider timed out.");
+            if (FailFirstCall && Calls == 1) throw new HttpRequestException("Provider disconnected.");
             return Task.FromResult(new HttpResponseMessage((HttpStatusCode)Status) { Content = new StringContent(Body) });
         }
     }

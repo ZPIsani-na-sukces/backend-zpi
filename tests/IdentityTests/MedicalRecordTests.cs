@@ -140,6 +140,8 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         using var stranger = await Actor(factory, AccountRole.Caretaker);
         var relationship = await Link(senior, caretaker);
         var record = await Create(caretaker, senior.Id, (Pdf, "application/pdf", "wynik.pdf"));
+        var recordPath = PathFor(senior.Id, record.RecordId);
+        var filePath = recordPath + "/files/" + record.Files[0].FileId;
         using var form = Form(Metadata());
         await Status(await senior.Client.PostAsync(Base(senior.Id), form), 403);
         await Status(await stranger.Client.GetAsync(Base(senior.Id)), 404);
@@ -148,8 +150,13 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         await Status(await caretaker.Client.DeleteAsync("/api/v1/care-relationships/" + relationship.RelationshipId), 204);
         await Status(await caretaker.Client.GetAsync(PathFor(senior.Id, record.RecordId)), 404);
         await Status(await caretaker.Client.GetAsync(ContentPath(senior.Id, record.RecordId, record.Files[0].FileId)), 404);
-        await Status(await Change(caretaker, HttpMethod.Put, PathFor(senior.Id, record.RecordId), 1, Metadata()), 404);
-        await Status(await senior.Client.GetAsync(PathFor(senior.Id, record.RecordId)), 200);
+        await Status(await Change(caretaker, HttpMethod.Put, recordPath, 1, Metadata()), 404);
+        await Status(await Change(caretaker, HttpMethod.Delete, recordPath, 1), 404);
+        await Status(await Change(caretaker, HttpMethod.Delete, filePath, 1), 404);
+        await Status(await Add(caretaker, senior.Id, record.RecordId, 1), 404);
+        using var denied = Form(Metadata());
+        await Status(await caretaker.Client.PostAsync(Base(senior.Id), denied), 404);
+        await Status(await senior.Client.GetAsync(recordPath), 200);
     }
 
     [PostgresFact]
@@ -163,6 +170,8 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         var second = await Create(caretaker, senior.Id);
         await Status(await senior.Client.GetAsync(ContentPath(senior.Id, second.RecordId, first.Files[0].FileId)), 404);
         await Status(await senior.Client.GetAsync(ContentPath(Guid.CreateVersion7(), first.RecordId, first.Files[0].FileId)), 404);
+        await Status(await senior.Client.GetAsync(ContentPath(senior.Id, Guid.CreateVersion7(), first.Files[0].FileId)), 404);
+        await Status(await Add(caretaker, senior.Id, Guid.CreateVersion7(), 1), 404);
         using var anonymous = factory.CreateClient();
         await Status(await anonymous.GetAsync(ContentPath(senior.Id, first.RecordId, first.Files[0].FileId)), 401);
     }
@@ -185,6 +194,9 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         await Status(added, 201);
         Assert.Equal("\"3\"", added.Headers.ETag!.Tag);
         var file = (await added.Content.ReadFromJsonAsync<MedicalFileDto>())!;
+        await Status(await Change(caretaker, HttpMethod.Put, path, 2, Metadata()), 412);
+        await Status(await Change(caretaker, HttpMethod.Delete, path, 2), 412);
+        await Status(await Change(caretaker, HttpMethod.Delete, path + "/files/" + file.FileId, 2), 412);
         var deleted = await Change(caretaker, HttpMethod.Delete, path + "/files/" + file.FileId, 3);
         await Status(deleted, 204);
         Assert.Equal("\"4\"", deleted.Headers.ETag!.Tag);
@@ -194,6 +206,24 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         var stored = Assert.Single(await StoredFiles(factory, record.RecordId));
         Assert.NotNull(stored.PurgedAt);
         Assert.False(File.Exists(System.IO.Path.Combine(fixture.MedicalStorageRoot, stored.ObjectKey)));
+    }
+
+    [PostgresFact]
+    public async Task Missing_storage_object_returns_not_found_without_recording_a_download()
+    {
+        await using var factory = Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        var record = await Create(caretaker, senior.Id, (Pdf, "application/pdf", "missing.pdf"));
+        var stored = Assert.Single(await StoredFiles(factory, record.RecordId));
+        File.Delete(System.IO.Path.Combine(fixture.MedicalStorageRoot, stored.ObjectKey));
+
+        await Status(await senior.Client.GetAsync(ContentPath(senior.Id, record.RecordId, stored.Id)), 404);
+        await Status(await senior.Client.GetAsync(PathFor(senior.Id, record.RecordId)), 200);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<MedicalRecordsDbContext>();
+        Assert.False(await database.MedicalAuditEntries.AnyAsync(row => row.SeniorId == senior.Id && row.Action == "download"));
     }
 
     [PostgresFact]
@@ -245,9 +275,10 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         using var senior = await Actor(factory, AccountRole.Senior);
         using var caretaker = await Actor(factory, AccountRole.Caretaker);
         await Link(senior, caretaker);
+        var date = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
         foreach (var title in new[] { "Beta", "Alfa", "Gamma" })
         {
-            using var form = Form(Metadata(title));
+            using var form = Form(Metadata(title) with { DocumentDate = date });
             await Status(await caretaker.Client.PostAsync(Base(senior.Id), form), 201);
         }
         var initial = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id) + "?sort=title&limit=1"))!;
@@ -271,6 +302,10 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         }
         var filtered = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(Base(senior.Id) + "?search=alF&recordType=testResult"))!;
         Assert.Equal("Alfa", Assert.Single(filtered.Items).Title);
+        var dateOnly = date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var sameDay = (await senior.Client.GetFromJsonAsync<CursorPageDto<MedicalRecordDto>>(
+            Base(senior.Id) + $"?documentDateFrom={dateOnly}&documentDateTo={dateOnly}"))!;
+        Assert.Equal(3, sameDay.Items.Count);
         await Status(await senior.Client.GetAsync(Base(senior.Id) + "?sort=unknown"), 400);
         await Status(await senior.Client.GetAsync(Base(senior.Id) + "?documentDateFrom=2026-10-16&documentDateTo=2026-10-15"), 400);
     }
@@ -394,6 +429,26 @@ public sealed partial class MedicalRecordTests(IdentityApiFixture fixture)
         Assert.False(File.Exists(orphan));
         Assert.False(File.Exists(staging));
         Assert.True(File.Exists(referenced));
+    }
+
+    [PostgresFact]
+    public async Task Orphan_cleanup_processes_a_full_batch_and_resumes_on_the_next_run()
+    {
+        var root = System.IO.Path.Combine(fixture.MedicalStorageRoot, Guid.CreateVersion7().ToString("N"));
+        Directory.CreateDirectory(root);
+        await using var factory = Factory().WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+            configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["MedicalRecords:StorageRoot"] = root })));
+        for (var index = 0; index < 101; index++)
+        {
+            var path = System.IO.Path.Combine(root, Guid.CreateVersion7().ToString("N"));
+            await File.WriteAllBytesAsync(path, Pdf);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-2));
+        }
+
+        await Cleanup(factory);
+        Assert.Single(Directory.EnumerateFiles(root));
+        await Cleanup(factory);
+        Assert.Empty(Directory.EnumerateFiles(root));
     }
     [PostgresFact]
     public async Task Storage_failure_returns_safe_503_and_does_not_create_a_partial_record()

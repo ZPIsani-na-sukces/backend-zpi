@@ -14,7 +14,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Zpi.Database;
 using Zpi.Domain;
+using Zpi.Modules.Care.Application;
 using Zpi.Modules.Care.Application.Invitations;
+using Zpi.Modules.Care.Application.Invitations.Create;
 using Zpi.Shared.Pagination;
 using Zpi.Modules.Care.Application.Relationships;
 using Zpi.Modules.Care.Application.Relationships.ListSeniors;
@@ -195,6 +197,23 @@ public sealed class CareTests(IdentityApiFixture fixture)
         await using var after = CareContext();
         Assert.True(await after.SeniorCareInvitations.AnyAsync(row => row.Code == existing.Code && row.SenderAccountId == sender.Id));
         Assert.True(await after.SeniorCareInvitations.AnyAsync(row => row.Code == unused && row.SenderAccountId == otherSender.Id));
+    }
+
+    [PostgresFact]
+    public async Task Repeated_code_collisions_stop_without_leaving_a_new_invitation()
+    {
+        await using var factory = fixture.Factory();
+        using var owner = await Actor(factory, AccountRole.Caretaker);
+        var original = await Invite(owner);
+        var generator = new SequenceCodeGenerator(Enumerable.Repeat(original.Code, 10).ToArray());
+        await using var collisionFactory = fixture.Factory().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddSingleton<IInvitationCodeGenerator>(generator)));
+        using var other = await Actor(collisionFactory, AccountRole.Senior);
+        await Error(await other.Client.PostAsync("/api/v1/care-invitations", null), 409, "invalidState");
+        Assert.Equal(10, generator.Calls);
+        await using var db = CareContext();
+        Assert.False(await db.SeniorCareInvitations.AnyAsync(row => row.SenderAccountId == other.Id));
+        Assert.Equal(owner.Id, (await db.SeniorCareInvitations.SingleAsync(row => row.Code == original.Code)).SenderAccountId);
     }
 
     [PostgresFact]
@@ -459,6 +478,42 @@ public sealed class CareTests(IdentityApiFixture fixture)
         Assert.Equal(caretaker.Id, Assert.Single(caretakers.Items).Caretaker.UserId);
         Assert.Single(caretakers.Items);
         Assert.Null(caretakers.NextCursor);
+        await Error(await otherCaretaker.Client.GetAsync($"/api/v1/seniors/{first.Id}/caretakers"), 404, "resourceNotFound");
+        var relationshipPath = $"/api/v1/care-relationships/{caretakers.Items[0].RelationshipId}";
+        await Error(await otherCaretaker.Client.DeleteAsync(relationshipPath), 404, "resourceNotFound");
+        Assert.Equal(HttpStatusCode.NoContent, (await caretaker.Client.DeleteAsync(relationshipPath)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await caretaker.Client.DeleteAsync(relationshipPath)).StatusCode);
+        await Error(await caretaker.Client.GetAsync($"/api/v1/seniors/{first.Id}/caretakers"), 404, "resourceNotFound");
+    }
+
+    [PostgresFact]
+    public async Task Care_facade_omits_inactive_accounts_and_requires_the_expected_role_on_each_side()
+    {
+        await using var factory = fixture.Factory();
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        using var activeSenior = await Actor(factory, AccountRole.Senior);
+        using var inactiveSenior = await Actor(factory, AccountRole.Senior);
+        await Accept(activeSenior, (await Invite(caretaker)).Code);
+        await Accept(inactiveSenior, (await Invite(caretaker)).Code);
+
+        await using var identity = fixture.Context();
+        var account = await identity.Accounts.SingleAsync(row => row.Id == inactiveSenior.Id);
+        account.Status = AccountStatus.PendingDeletion;
+        await identity.SaveChangesAsync();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var care = scope.ServiceProvider.GetRequiredService<ICareFacade>();
+        Assert.Equal(activeSenior.Id, Assert.Single(await care.GetAccessibleSeniorIdsAsync(caretaker.Id,
+            [activeSenior.Id, inactiveSenior.Id, caretaker.Id], CancellationToken.None)));
+        Assert.Empty(await care.GetAccessibleSeniorIdsAsync(inactiveSenior.Id, [inactiveSenior.Id], CancellationToken.None));
+        Assert.Empty(await care.GetAccessibleSeniorIdsAsync(activeSenior.Id, [inactiveSenior.Id], CancellationToken.None));
+        Assert.Empty(await care.GetActiveCaretakerIdsAsync(inactiveSenior.Id, CancellationToken.None));
+        Assert.Empty(await care.GetActiveCaretakerIdsAsync(caretaker.Id, CancellationToken.None));
+        Assert.False(await care.CanAccessSeniorAsync(caretaker.Id, caretaker.Id, CancellationToken.None));
+        Assert.False(await care.CanAccessSeniorAsync(inactiveSenior.Id, inactiveSenior.Id, CancellationToken.None));
+
+        var handler = scope.ServiceProvider.GetRequiredService<CreateInvitationHandler>();
+        var denied = await handler.Handle(new(inactiveSenior.Id), CancellationToken.None);
+        Assert.Equal(CareFailure.ResourceNotFound, denied.Failure);
     }
 
     private async Task<TestActor> Actor(WebApplicationFactory<Program> factory, AccountRole role, string lastName = "Kowalski")

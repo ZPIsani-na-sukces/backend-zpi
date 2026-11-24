@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Zpi.Modules.MedicalRecords.Application;
@@ -39,7 +40,7 @@ public sealed class LocalMedicalFileStorage(IOptions<MedicalRecordOptions> optio
             File.Move(temporary, FilePath(key));
             return new StoredMedicalFile(key, name, mime, length, checksum);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException and not BadHttpRequestException or UnauthorizedAccessException)
         {
             throw new MedicalStorageException(exception);
         }

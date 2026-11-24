@@ -13,7 +13,7 @@ public sealed class NotificationOutboxProcessor(NotificationsDbContext context, 
         foreach (var source in sources)
         {
             try
-            {
+            {  
                 await source.PrepareAsync(cancellationToken);
                 var pending = await source.ReadPendingAsync(100, cancellationToken);
                 foreach (var row in pending)

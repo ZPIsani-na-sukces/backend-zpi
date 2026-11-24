@@ -34,12 +34,36 @@ public sealed class TwilioSmsSenderTests
     }
 
     [Theory]
+    [InlineData("Development", SmsSendStatus.Sent)]
+    [InlineData("Production", SmsSendStatus.Unavailable)]
+    public async Task Unconfigured_sms_returns_the_correct_environment_specific_delivery_status(string environment, SmsSendStatus status)
+    {
+        var logs = new RecordingLogs();
+        using var services = Services(new Dictionary<string, string?>(), environment, logs: logs);
+        Assert.Equal(new SmsSendResult(status), await SendSms(services));
+        Assert.Equal(status == SmsSendStatus.Sent, logs.Messages.Any(message => message.Contains("Development SMS")));
+    }
+
+    [Theory]
     [InlineData("Production")]
     [InlineData("Development")]
     public void The_allowlist_wraps_twilio_in_every_environment(string environment)
     {
         using var services = Services(Allowlisted(), environment);
         Assert.IsType<AllowlistedSmsSender>(services.GetRequiredService<ISmsSender>());
+        Assert.True(services.GetRequiredService<IPhoneCodeSender>().IsAvailable);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Created, "[]", SmsSendStatus.Sent)]
+    [InlineData(HttpStatusCode.Created, "{\"sid\":17}", SmsSendStatus.Sent)]
+    [InlineData(HttpStatusCode.BadRequest, "{\"code\":\"21211\"}", SmsSendStatus.Unavailable)]
+    [InlineData(HttpStatusCode.BadRequest, "{\"code\":2147483648}", SmsSendStatus.Unavailable)]
+    public async Task Unexpected_provider_fields_do_not_create_delivery_ids_or_classify_numbers_as_invalid(
+        HttpStatusCode status, string body, SmsSendStatus expected)
+    {
+        using var services = Services(Configured(), handler: new FakeTwilio(status, body));
+        Assert.Equal(new SmsSendResult(expected), await SendSms(services));
     }
 
     [Theory]

@@ -12,6 +12,7 @@ using Zpi.Database;
 using Zpi.Modules.Care.Infrastructure.Persistence;
 using Zpi.Modules.Identity.Infrastructure.Persistence;
 using Zpi.Modules.Identity.Application.Authentication;
+using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.MedicalRecords.Persistence;
 using Zpi.Modules.Notifications.Infrastructure.Persistence;
 using Zpi.Modules.Routines.Infrastructure.Persistence;
@@ -155,7 +156,7 @@ public sealed class TestPhoneCodeSender : IPhoneCodeSender
     private readonly ConcurrentDictionary<Guid, string> codes = new();
     private readonly ConcurrentDictionary<string, PhoneCodeDelivery> results = new();
 
-    public bool IsAvailable => true;
+    public bool IsAvailable { get; set; } = true;
 
     public Task<PhoneCodeDelivery> SendAsync(Guid challengeId, string phoneNumber, string code, CancellationToken cancellationToken)
     {
@@ -174,10 +175,12 @@ public sealed class TestEmailCodeSender : IEmailCodeSender
 {
     private readonly ConcurrentDictionary<Guid, EmailCodeDelivery> codes = new();
 
-    public bool IsAvailable => true;
+    public bool IsAvailable { get; set; } = true;
+    public EmailDeliveryException? DeliveryError { get; set; }
 
     public Task SendAsync(EmailCodeDelivery delivery, CancellationToken cancellationToken)
     {
+        if (DeliveryError is not null) throw DeliveryError;
         codes[delivery.ChallengeId] = delivery;
         return Task.CompletedTask;
     }

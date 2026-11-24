@@ -5,7 +5,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Zpi.Database;
 using Zpi.Domain;
 using Zpi.Modules.Care.Application.Invitations;
 using Zpi.Modules.Care.Application.Relationships;
@@ -49,11 +51,15 @@ public sealed class ContactTests(IdentityApiFixture fixture)
         var active = (await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path))!;
         Assert.Equal(contact, Assert.Single(active.Items));
         Assert.Single(active.Items);
-        var updated = await Send(caretaker.Client, HttpMethod.Put, item, Body("Zofia", false), "\"1\"");
+        var updated = await Send(caretaker.Client, HttpMethod.Put, item,
+            Body("Zofia", false, " ") with { FirstName = null, LastName = " Nowak " }, "\"1\"");
         Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
         Assert.Equal("\"2\"", updated.Headers.ETag!.Tag);
         var saved = (await updated.Content.ReadFromJsonAsync<ContactDto>())!;
         Assert.False(saved.IsActive);
+        Assert.Null(saved.FirstName);
+        Assert.Equal("Nowak", saved.LastName);
+        Assert.Null(saved.RelationshipLabel);
         Assert.Equal(contact.CreatedAt, saved.CreatedAt);
         Assert.Empty((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path))!.Items);
         Assert.Equal(saved, Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<ContactDto>>(path + "?isActive=false"))!.Items));
@@ -208,6 +214,41 @@ public sealed class ContactTests(IdentityApiFixture fixture)
         foreach (var cleanup in scope.ServiceProvider.GetServices<IAccountDataCleanup>())
             await cleanup.DeleteAsync(senior.Id, CancellationToken.None);
         Assert.False(await context.ContactSettings.AnyAsync(row => row.SeniorId == senior.Id));
+    }
+
+    [PostgresFact]
+    public async Task Concurrent_first_reads_share_one_persisted_contact_settings_version()
+    {
+        await using var factory = fixture.Factory();
+        using var senior = await Actor(factory, AccountRole.Senior);
+        var builder = new DbContextOptionsBuilder<SeniorProfileDbContext>();
+        DatabaseConfiguration.Configure(builder, fixture.ConnectionString, SeniorProfileDbContext.Schema);
+        builder.AddInterceptors(new ConcurrentInsertBarrier());
+        await using var first = new SeniorProfileDbContext(builder.Options);
+        await using var second = new SeniorProfileDbContext(builder.Options);
+        var settings = await Task.WhenAll(new ContactSettingsLoader(first).GetOrCreateAsync(senior.Id, CancellationToken.None),
+            new ContactSettingsLoader(second).GetOrCreateAsync(senior.Id, CancellationToken.None));
+        Assert.All(settings, value =>
+        {
+            Assert.Equal(senior.Id, value.SeniorId);
+            Assert.Equal(1, value.Version);
+            Assert.False(value.SeniorEditingLocked);
+        });
+        Assert.Equal(1, await first.ContactSettings.CountAsync(row => row.SeniorId == senior.Id));
+    }
+
+    private sealed class ConcurrentInsertBarrier : SaveChangesInterceptor
+    {
+        private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int waiting;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref waiting) == 2) ready.TrySetResult();
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            return result;
+        }
     }
 
     [PostgresFact]

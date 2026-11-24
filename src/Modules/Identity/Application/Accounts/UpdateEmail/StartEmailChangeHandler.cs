@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Zpi.Modules.Identity.Application.Authentication;
 using Zpi.Modules.Identity.Application.Authentication.Register;
+using Zpi.Modules.Identity.Contracts;
 using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.Identity.Infrastructure.Persistence;
@@ -56,7 +57,14 @@ public sealed class StartEmailChangeHandler(IdentityDbContext context, PasswordH
             return AuthenticationResult<ChallengeDto>.Failed(AuthenticationFailure.InvalidState);
         }
 
-        await sender.SendAsync(new EmailCodeDelivery(challenge.Id, email, code, challenge.Purpose, challenge.ExpiresAt), cancellationToken);
+        try
+        {
+            await sender.SendAsync(new EmailCodeDelivery(challenge.Id, email, code, challenge.Purpose, challenge.ExpiresAt), cancellationToken);
+        }
+        catch (EmailDeliveryException)
+        {
+            return AuthenticationResult<ChallengeDto>.Failed(AuthenticationFailure.DeliveryUnavailable);
+        }
         return AuthenticationResult<ChallengeDto>.Success(new ChallengeDto(challenge.Id, "email", challenge.ExpiresAt, challenge.ResendAfter));
     }
 }

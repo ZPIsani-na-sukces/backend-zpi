@@ -22,7 +22,7 @@ using Zpi.Modules.SeniorProfile.Infrastructure.Persistence;
 namespace Zpi.IdentityTests;
 
 [Collection("Identity API")]
-public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
+public sealed partial class AccountLifecycleTests(IdentityApiFixture fixture)
 {
     private const string Password = "A long password 123!";
 
@@ -46,6 +46,46 @@ public sealed class AccountLifecycleTests(IdentityApiFixture fixture)
         Assert.Null(await store.FindByRefreshTokenAsync(TokenService.HashSecret(first.RefreshToken!), CancellationToken.None));
         Bearer(client, second);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/v1/me")).StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Session_store_rejects_duplicate_ids_and_expired_sessions_without_modifying_the_current_session()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var (_, phone) = await ActiveAccount(client);
+        var login = await Login(client, phone);
+        var store = factory.Services.GetRequiredService<ISessionStore>();
+        var original = (await store.GetAsync(Id(login), CancellationToken.None))!;
+        var originalHash = original.RefreshTokenHash;
+        original.RefreshTokenHash = "duplicate-test-hash";
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.SaveAsync(original, CancellationToken.None));
+        Assert.NotNull(await store.FindByRefreshTokenAsync(originalHash, CancellationToken.None));
+        Assert.Null(await store.FindByRefreshTokenAsync(original.RefreshTokenHash, CancellationToken.None));
+
+        original.Id = Guid.CreateVersion7();
+        original.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await Assert.ThrowsAsync<ArgumentException>(() => store.SaveAsync(original, CancellationToken.None));
+        Assert.Null(await store.GetAsync(original.Id, CancellationToken.None));
+        await store.RevokeAsync(original.Id, CancellationToken.None);
+        Assert.NotNull(await store.FindByRefreshTokenAsync(originalHash, CancellationToken.None));
+    }
+
+    [PostgresFact]
+    public async Task A_synchronous_account_update_advances_the_version_seen_by_the_API()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var (id, phone) = await ActiveAccount(client);
+        Bearer(client, await Login(client, phone));
+        await using var context = fixture.Context();
+        var account = await context.Accounts.SingleAsync(row => row.Id == id);
+        var previous = account.Version;
+        account.LastName = "Updated";
+        context.SaveChanges();
+
+        Assert.Equal(previous + 1, account.Version);
+        Assert.Equal($"\"{account.Version}\"", await ProfileVersion(client));
     }
 
     [PostgresFact]

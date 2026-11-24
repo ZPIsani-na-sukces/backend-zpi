@@ -240,8 +240,10 @@ public sealed class PhoneVerificationTests(IdentityApiFixture fixture)
         Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync("/api/v1/auth/registrations", request)).StatusCode);
     }
 
-    [PostgresFact]
-    public async Task Resend_whose_sms_fails_keeps_the_previous_code_valid()
+    [PostgresTheory]
+    [InlineData(PhoneCodeDelivery.Unavailable, HttpStatusCode.ServiceUnavailable)]
+    [InlineData(PhoneCodeDelivery.InvalidPhoneNumber, HttpStatusCode.BadRequest)]
+    public async Task Resend_whose_sms_fails_keeps_the_previous_code_valid(PhoneCodeDelivery failure, HttpStatusCode status)
     {
         await using var factory = fixture.Factory();
         using var client = factory.CreateClient();
@@ -257,11 +259,11 @@ public sealed class PhoneVerificationTests(IdentityApiFixture fixture)
             challenge.ResendAfter = DateTimeOffset.UtcNow.AddSeconds(-1);
             await context.SaveChangesAsync();
         }
-        sender.Respond(phone, PhoneCodeDelivery.Unavailable);
+        sender.Respond(phone, failure);
 
         var resend = await client.PostAsJsonAsync("/api/v1/auth/phone-verifications",
             new { verificationTicket = registration.VerificationTicket });
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, resend.StatusCode);
+        Assert.Equal(status, resend.StatusCode);
         await using (var context = fixture.Context())
         {
             var remaining = Assert.Single(await context.VerificationChallenges
@@ -271,6 +273,45 @@ public sealed class PhoneVerificationTests(IdentityApiFixture fixture)
         }
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
             new { challengeId, code = sender.CodeFor(challengeId) })).StatusCode);
+    }
+
+    [PostgresTheory]
+    [InlineData(false, HttpStatusCode.BadRequest)]
+    [InlineData(true, HttpStatusCode.Conflict)]
+    public async Task Registration_code_and_resend_require_both_a_live_ticket_and_a_pending_account(bool active, HttpStatusCode status)
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        using var response = await client.PostAsJsonAsync("/api/v1/auth/registrations",
+            new { role = "senior", firstName = "Jan", lastName = "Kowalski", phoneNumber = phone, email = (string?)null, password = Password });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var registration = (await response.Content.ReadFromJsonAsync<RegistrationDto>())!;
+        var code = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(registration.PhoneChallenge.ChallengeId);
+        await using var db = fixture.Context();
+        var account = await db.Accounts.SingleAsync(row => row.Id == registration.UserId);
+        var ticket = await db.VerificationTickets.SingleAsync(row => row.AccountId == account.Id);
+        if (active)
+        {
+            account.Status = AccountStatus.Active;
+            account.PhoneVerifiedAt = DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            ticket.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+            ticket.CreatedAt = ticket.ExpiresAt.AddMinutes(-10);
+        }
+        await db.SaveChangesAsync();
+
+        using var resend = await client.PostAsJsonAsync("/api/v1/auth/phone-verifications",
+            new { registration.VerificationTicket });
+        using var confirmation = await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code });
+        Assert.Equal(status, resend.StatusCode);
+        Assert.Equal(status, confirmation.StatusCode);
+        var challenge = await db.VerificationChallenges.SingleAsync(row => row.Id == registration.PhoneChallenge.ChallengeId);
+        Assert.Null(challenge.ConsumedAt);
+        Assert.Equal(0, challenge.Attempts);
     }
 
     [PostgresFact]

@@ -283,10 +283,12 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
         await Error(await Send(outsider.Client, HttpMethod.Post, Tasks(senior.Id), Body(clock)), 404, "resourceNotFound");
         await Error(await Decide(caretaker, occurrence, TaskDecision.Confirmed, clock.GetUtcNow()), 403, "operationForbidden");
         await Error(await Decide(otherSenior, occurrence, TaskDecision.Confirmed, clock.GetUtcNow()), 404, "resourceNotFound");
+        await Error(await senior.Client.GetAsync(OccurrencePath(senior.Id, Guid.CreateVersion7())), 404, "resourceNotFound");
         await Error(await caretaker.Client.GetAsync(Tasks(otherSenior.Id) + "/" + task.TaskId), 404, "resourceNotFound");
         await Status(await caretaker.Client.DeleteAsync($"/api/v1/care-relationships/{relationship.RelationshipId}"), 204);
         await Error(await caretaker.Client.GetAsync(Tasks(senior.Id)), 404, "resourceNotFound");
         await Error(await Send(caretaker.Client, HttpMethod.Put, Tasks(senior.Id) + "/" + task.TaskId, Body(clock), "\"1\""), 404, "resourceNotFound");
+        await Error(await Send(caretaker.Client, HttpMethod.Delete, Tasks(senior.Id) + "/" + task.TaskId, etag: "\"1\""), 404, "resourceNotFound");
         await using var identity = fixture.Context();
         var account = await identity.Accounts.SingleAsync(row => row.Id == senior.Id);
         account.Status = AccountStatus.PendingDeletion;
@@ -305,6 +307,8 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
         var body = Body(clock);
         var task = await Create(caretaker, senior.Id, body);
         var path = Tasks(senior.Id) + "/" + task.TaskId;
+        await Error(await Send(caretaker.Client, HttpMethod.Delete, Tasks(senior.Id) + "/" + Guid.CreateVersion7(), etag: "\"1\""),
+            404, "resourceNotFound");
         foreach (var method in new[] { HttpMethod.Put, HttpMethod.Delete })
         {
             await Error(await Send(caretaker.Client, method, path, method == HttpMethod.Put ? body : null), 428, "preconditionRequired");
@@ -354,14 +358,18 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
             valid with { Title = " " }, valid with { Title = new string('a', 151) }, valid with { Instructions = "" },
             valid with { Type = (RoutineType)99 }, valid with { StartsOn = default }, valid with { EndsOn = valid.StartsOn.AddDays(-1) },
             valid with { Schedule = null! }, valid with { Schedule = valid.Schedule with { TimeZone = "not/a-zone" } },
+            valid with { Schedule = valid.Schedule with { TimeZone = "Central European Standard Time" } },
             valid with { Schedule = valid.Schedule with { DaysOfWeek = [] } }, valid with { Schedule = valid.Schedule with { DaysOfWeek = [1, 1] } },
+            valid with { Schedule = valid.Schedule with { DaysOfWeek = [1, 2, 3, 4, 5, 6, 7, 1] } },
+            valid with { Schedule = valid.Schedule with { DaysOfWeek = null! } },
             valid with { Schedule = valid.Schedule with { DaysOfWeek = [0] } }, valid with { Schedule = valid.Schedule with { DaysOfWeek = [8] } },
             valid with { Schedule = valid.Schedule with { Times = [] } }, valid with { Schedule = valid.Schedule with { Times = [new(8, 0), new(8, 0)] } },
+            valid with { Schedule = valid.Schedule with { Times = null! } },
             valid with { Schedule = valid.Schedule with { Times = Enumerable.Range(0, 13).Select(hour => new TimeOnly(hour, 0)).ToArray() } },
             valid with { Schedule = valid.Schedule with { Times = [new TimeOnly(8, 0).Add(TimeSpan.FromMilliseconds(1))] } }
         };
         foreach (var body in invalid) await Error(await Send(caretaker.Client, HttpMethod.Post, Tasks(senior.Id), body), 400, "validationFailed");
-        var task = await Create(caretaker, senior.Id, valid);
+        var task = await Create(caretaker, senior.Id, valid with { EndsOn = valid.StartsOn });
         var occurrence = (await Occurrences(senior, clock)).Items[0];
         foreach (var at in new[] { clock.GetUtcNow().AddDays(-31), clock.GetUtcNow().AddMinutes(6) })
             await Error(await Decide(senior, occurrence, TaskDecision.Confirmed, at), 400, "validationFailed");
@@ -370,6 +378,7 @@ public sealed class RoutinesTests(IdentityApiFixture fixture)
             await Error(await senior.Client.GetAsync(range + "&" + query), 400, "validationFailed");
         await Error(await senior.Client.GetAsync($"/api/v1/seniors/{senior.Id}/task-occurrences"), 400, "validationFailed");
         await Error(await senior.Client.GetAsync(OccurrenceRange(senior.Id, clock.GetUtcNow(), clock.GetUtcNow().AddDays(31))), 400, "validationFailed");
+        await Error(await senior.Client.GetAsync(OccurrenceRange(senior.Id, clock.GetUtcNow().AddDays(-33), clock.GetUtcNow())), 400, "validationFailed");
         await Error(await senior.Client.GetAsync(OccurrenceRange(senior.Id, clock.GetUtcNow(), clock.GetUtcNow().AddDays(-1))), 400, "validationFailed");
         Assert.Single((await senior.Client.GetFromJsonAsync<CursorPageDto<RoutineTaskDto>>(Tasks(senior.Id)))!.Items);
         Assert.Equal(1, (await senior.Client.GetFromJsonAsync<RoutineTaskDto>(Tasks(senior.Id) + "/" + task.TaskId))!.Version);

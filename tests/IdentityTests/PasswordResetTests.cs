@@ -416,6 +416,185 @@ public sealed class PasswordResetTests(IdentityApiFixture fixture)
         }
     }
 
+    [PostgresFact]
+    public async Task Email_verification_resend_invalidates_the_old_code_and_stops_after_confirmation()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var email = $"verification.{phone[3..]}@example.test";
+        var registration = await Register(client, phone, email, "caretaker");
+        var phoneCode = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(registration.PhoneChallenge.ChallengeId);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneCode })).StatusCode);
+        using var login = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = email, password = OldPassword, clientType = "mobile" });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", (await login.Content.ReadFromJsonAsync<SessionDto>())!.AccessToken);
+        const string path = "/api/v1/auth/email-verifications";
+        using var original = await client.PostAsync(path, null);
+        Assert.Equal(HttpStatusCode.Accepted, original.StatusCode);
+        var challenge = (await original.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        using var throttled = await client.PostAsync(path, null);
+        Assert.Equal(HttpStatusCode.TooManyRequests, throttled.StatusCode);
+
+        await using var context = fixture.Context();
+        var saved = await context.VerificationChallenges.SingleAsync(row => row.Id == challenge.ChallengeId);
+        saved.ResendAfter = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await context.SaveChangesAsync();
+
+        using var resent = await client.PostAsync(path, null);
+        Assert.Equal(HttpStatusCode.Accepted, resent.StatusCode);
+        var current = (await resent.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var sender = factory.Services.GetRequiredService<TestEmailCodeSender>();
+        using var oldCode = await client.PostAsJsonAsync(path + "/confirm",
+            new { challengeId = challenge.ChallengeId, code = sender.CodeFor(challenge.ChallengeId) });
+        Assert.Equal(HttpStatusCode.BadRequest, oldCode.StatusCode);
+        using var confirmed = await client.PostAsJsonAsync(path + "/confirm",
+            new { challengeId = current.ChallengeId, code = sender.CodeFor(current.ChallengeId) });
+        Assert.Equal(HttpStatusCode.NoContent, confirmed.StatusCode);
+        using var alreadyVerified = await client.PostAsync(path, null);
+        Assert.Equal(HttpStatusCode.Conflict, alreadyVerified.StatusCode);
+    }
+
+    [PostgresTheory]
+    [InlineData("email")]
+    [InlineData("sms")]
+    public async Task Reset_code_stops_working_after_the_account_contact_changes(string channel)
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var email = $"contact-reset.{phone[3..]}@example.test";
+        var registration = await Register(client, phone, email, "caretaker");
+        var phoneCode = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(registration.PhoneChallenge.ChallengeId);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneCode })).StatusCode);
+
+        using var response = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests",
+            new { channel, identifier = channel == "sms" ? phone : email });
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var challenge = (await response.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var code = channel == "sms" ? factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(challenge.ChallengeId)
+            : factory.Services.GetRequiredService<TestEmailCodeSender>().CodeFor(challenge.ChallengeId);
+        await using var context = fixture.Context();
+        var account = await context.Accounts.SingleAsync(row => row.Id == registration.UserId);
+        if (channel == "sms")
+        {
+            account.PhoneNumber = Phone();
+            account.NormalizedPhoneNumber = account.PhoneNumber;
+        }
+        else
+        {
+            account.Email = "updated." + email;
+            account.NormalizedEmail = account.Email.ToUpperInvariant();
+        }
+        await context.SaveChangesAsync();
+
+        using var verify = await client.PostAsJsonAsync("/api/v1/auth/password-resets/verify", new { challengeId = challenge.ChallengeId, code });
+        Assert.Equal(HttpStatusCode.BadRequest, verify.StatusCode);
+        using var reset = await client.PostAsJsonAsync("/api/v1/auth/password-resets",
+            new { challengeId = challenge.ChallengeId, code, newPassword = NewPassword });
+        Assert.Equal(HttpStatusCode.BadRequest, reset.StatusCode);
+        var stored = await context.VerificationChallenges.SingleAsync(row => row.Id == challenge.ChallengeId);
+        Assert.Null(stored.ConsumedAt);
+        Assert.Equal(0, stored.Attempts);
+    }
+
+    [PostgresFact]
+    public async Task Reissued_reset_code_invalidates_the_previous_code_across_delivery_channels()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var email = $"reset-resend.{phone[3..]}@example.test";
+        var registration = await Register(client, phone, email, "caretaker");
+        var phoneSender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+        using var confirmed = await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneSender.CodeFor(registration.PhoneChallenge.ChallengeId) });
+        Assert.Equal(HttpStatusCode.NoContent, confirmed.StatusCode);
+        const string requestPath = "/api/v1/auth/password-reset-requests";
+        using var initial = await client.PostAsJsonAsync(requestPath, new { channel = "sms", identifier = phone });
+        Assert.Equal(HttpStatusCode.Accepted, initial.StatusCode);
+        var challenge = (await initial.Content.ReadFromJsonAsync<ChallengeDto>())!;
+
+        await using var db = fixture.Context();
+        var original = await db.VerificationChallenges.SingleAsync(row => row.Id == challenge.ChallengeId);
+        original.ResendAfter = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await db.SaveChangesAsync();
+
+        using var repeated = await client.PostAsJsonAsync(requestPath, new { channel = "email", identifier = email });
+        Assert.Equal(HttpStatusCode.Accepted, repeated.StatusCode);
+        var current = (await repeated.Content.ReadFromJsonAsync<ChallengeDto>())!;
+        var emailSender = factory.Services.GetRequiredService<TestEmailCodeSender>();
+        const string verifyPath = "/api/v1/auth/password-resets/verify";
+        using var oldCode = await client.PostAsJsonAsync(verifyPath,
+            new { challengeId = challenge.ChallengeId, code = phoneSender.CodeFor(challenge.ChallengeId) });
+        Assert.Equal(HttpStatusCode.BadRequest, oldCode.StatusCode);
+        using var newCode = await client.PostAsJsonAsync(verifyPath,
+            new { challengeId = current.ChallengeId, code = emailSender.CodeFor(current.ChallengeId) });
+        Assert.Equal(HttpStatusCode.NoContent, newCode.StatusCode);
+    }
+
+    [PostgresTheory]
+    [InlineData("email")]
+    [InlineData("sms")]
+    public async Task Reset_reports_unavailable_channels_consistently_for_known_and_unknown_accounts(string channel)
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var email = $"unavailable-reset.{phone[3..]}@example.test";
+        var registration = await Register(client, phone, email, "caretaker");
+        var phoneSender = factory.Services.GetRequiredService<TestPhoneCodeSender>();
+        var emailSender = factory.Services.GetRequiredService<TestEmailCodeSender>();
+        using var confirmed = await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneSender.CodeFor(registration.PhoneChallenge.ChallengeId) });
+        Assert.Equal(HttpStatusCode.NoContent, confirmed.StatusCode);
+        phoneSender.IsAvailable = channel == "email";
+        emailSender.IsAvailable = channel == "sms";
+        foreach (var identifier in channel == "sms" ? new[] { phone, Phone() } : [email, "missing." + email])
+        {
+            using var response = await client.PostAsJsonAsync("/api/v1/auth/password-reset-requests", new { channel, identifier });
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.Contains("deliveryUnavailable", await response.Content.ReadAsStringAsync());
+        }
+        await using var db = fixture.Context();
+        Assert.False(await db.VerificationChallenges.AnyAsync(row => row.AccountId == registration.UserId && row.Purpose == ChallengePurpose.PasswordReset));
+    }
+
+    [PostgresFact]
+    public async Task Email_verification_waits_for_an_address_and_a_working_delivery_channel()
+    {
+        await using var factory = fixture.Factory();
+        using var client = factory.CreateClient();
+        var phone = Phone();
+        var registration = await Register(client, phone, null, "senior");
+        var phoneCode = factory.Services.GetRequiredService<TestPhoneCodeSender>().CodeFor(registration.PhoneChallenge.ChallengeId);
+        using var confirmed = await client.PostAsJsonAsync("/api/v1/auth/phone-verifications/confirm",
+            new { challengeId = registration.PhoneChallenge.ChallengeId, code = phoneCode });
+        Assert.Equal(HttpStatusCode.NoContent, confirmed.StatusCode);
+        using var login = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new { identifier = phone, password = OldPassword, clientType = "mobile" });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", (await login.Content.ReadFromJsonAsync<SessionDto>())!.AccessToken);
+
+        using var noAddress = await client.PostAsync("/api/v1/auth/email-verifications", null);
+        Assert.Equal(HttpStatusCode.Conflict, noAddress.StatusCode);
+        await using var db = fixture.Context();
+        var account = await db.Accounts.SingleAsync(row => row.Id == registration.UserId);
+        account.Email = $"new.{phone[3..]}@example.test";
+        account.NormalizedEmail = account.Email.ToUpperInvariant();
+        await db.SaveChangesAsync();
+        var email = factory.Services.GetRequiredService<TestEmailCodeSender>();
+        email.IsAvailable = false;
+        using var unavailable = await client.PostAsync("/api/v1/auth/email-verifications", null);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        email.IsAvailable = true;
+        using var accepted = await client.PostAsync("/api/v1/auth/email-verifications", null);
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+    }
+
     private sealed class FailingEmailCodeSender : IEmailCodeSender
     {
         public bool IsAvailable => true;

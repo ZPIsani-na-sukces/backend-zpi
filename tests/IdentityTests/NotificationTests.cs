@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -15,6 +16,7 @@ using Zpi.Modules.Identity.Domain;
 using Zpi.Modules.Identity.Infrastructure.Authentication;
 using Zpi.Modules.Notifications.Application.Delivery;
 using Zpi.Modules.Notifications.Application.Inbox;
+using Zpi.Modules.Notifications.Application.Outbox;
 using Zpi.Modules.Notifications.Contracts;
 using Zpi.Modules.Notifications.Domain;
 using Zpi.Modules.Notifications.Infrastructure.Persistence;
@@ -107,6 +109,37 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         var raw = await senior.Client.GetAsync("/api/v1/me/notifications/" + notification.NotificationId);
         Assert.True(raw.Headers.CacheControl!.NoStore);
         Assert.DoesNotContain("TokenHash", await raw.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [PostgresFact]
+    public async Task Inbox_combines_senior_filter_with_inclusive_start_and_exclusive_end()
+    {
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var other = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        await Link(other, caretaker);
+        var start = clock.GetUtcNow();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var notifications = scope.ServiceProvider.GetRequiredService<INotificationsFacade>();
+        async Task Enqueue(Guid seniorId, string title) => await notifications.EnqueueAsync("test",
+            new NotificationEvent(Guid.CreateVersion7(), caretaker.Id, seniorId, NotificationType.LowBattery,
+                title, "Podłącz ładowarkę.", NotificationTargetKind.Incident, Guid.CreateVersion7(), null),
+            CancellationToken.None);
+        await Enqueue(senior.Id, "Na początku");
+        await Enqueue(other.Id, "Inny podopieczny");
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var end = clock.GetUtcNow();
+        await Enqueue(senior.Id, "Na końcu");
+
+        var from = Uri.EscapeDataString(start.ToOffset(TimeSpan.FromHours(1)).ToString("O"));
+        var to = Uri.EscapeDataString(end.ToString("O"));
+        var bounded = await Inbox(caretaker, $"seniorId={senior.Id}&from={from}&to={to}");
+        Assert.Equal("Na początku", Assert.Single(bounded.Items).Title);
+        Assert.Equal(2, (await Inbox(caretaker, $"seniorId={senior.Id}&from={from}")).Items.Count);
+        Assert.Equal(2, (await Inbox(caretaker, $"to={to}")).Items.Count);
     }
 
     [PostgresFact]
@@ -273,6 +306,98 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
     }
 
     [PostgresFact]
+    public async Task Outbox_isolates_source_failures_and_retries_missing_and_mismatched_payloads()
+    {
+        await using var factory = Factory(new TestClock());
+        using var senior = await Actor(factory, AccountRole.Senior);
+        var eventId = Guid.CreateVersion7();
+        var message = new NotificationEvent(eventId, senior.Id, senior.Id, NotificationType.LowBattery,
+            "Bateria", "Podłącz ładowarkę.", NotificationTargetKind.Incident, Guid.CreateVersion7(), null);
+        var missing = new PendingNotificationEvent(Guid.CreateVersion7(), 1, "null");
+        var mismatched = new PendingNotificationEvent(Guid.CreateVersion7(), 1, JsonSerializer.Serialize(message));
+        var source = new TestSource
+        {
+            Pending = [missing, mismatched, new(eventId, 1, JsonSerializer.Serialize(message))]
+        };
+        await using var scope = factory.Services.CreateAsyncScope();
+        var processor = scope.ServiceProvider.GetRequiredService<NotificationOutboxProcessor>();
+        await processor.ProcessAsync([new TestSource { FailPreparation = true }, source], CancellationToken.None);
+
+        Assert.Equal(new[] { missing.Id, mismatched.Id }, source.Retried);
+        Assert.True(source.Completed);
+        Assert.Equal("Bateria", Assert.Single((await Inbox(senior)).Items).Title);
+    }
+
+    [PostgresFact]
+    public async Task Outbox_does_not_retry_events_when_processing_is_cancelled()
+    {
+        await using var factory = Factory(new TestClock());
+        using var cancellation = new CancellationTokenSource();
+        var id = Guid.CreateVersion7();
+        var source = new TestSource
+        {
+            Pending =
+            [
+                new(id, 1, JsonSerializer.Serialize(new NotificationEvent(id, Guid.CreateVersion7(), null,
+                    NotificationType.LowBattery, "Bateria", "Podłącz ładowarkę.", NotificationTargetKind.Incident,
+                    Guid.CreateVersion7(), null)))
+            ],
+            OnRelevanceCheck = token =>
+            {
+                cancellation.Cancel();
+                token.ThrowIfCancellationRequested();
+            }
+        };
+        await using var scope = factory.Services.CreateAsyncScope();
+        var processor = scope.ServiceProvider.GetRequiredService<NotificationOutboxProcessor>();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => processor.ProcessAsync([source], cancellation.Token));
+        Assert.False(source.Completed);
+        Assert.Empty(source.Retried);
+    }
+
+    [PostgresFact]
+    public async Task Care_invitation_notification_targets_the_invitation_without_a_senior_filter()
+    {
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        var invitationId = Guid.CreateVersion7();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var notifications = scope.ServiceProvider.GetRequiredService<INotificationsFacade>();
+        var message = new NotificationEvent(Guid.CreateVersion7(), caretaker.Id, null, NotificationType.CareInvitation,
+            "Zaproszenie", "Otwórz zaproszenie.", NotificationTargetKind.CareInvitation, invitationId, null);
+        await notifications.EnqueueAsync("test", message with { ExpiresAt = clock.GetUtcNow() }, CancellationToken.None);
+        await notifications.EnqueueAsync("test", message with { RecipientAccountId = Guid.CreateVersion7() }, CancellationToken.None);
+        Assert.Empty((await Inbox(caretaker)).Items);
+        await notifications.EnqueueAsync("test", message, CancellationToken.None);
+
+        var item = Assert.Single((await Inbox(caretaker)).Items);
+        Assert.Null(item.SeniorId);
+        Assert.Equal(invitationId, item.Target.InvitationId);
+        Assert.Equal("inApp", Assert.Single(item.Deliveries).Channel);
+    }
+
+    [PostgresFact]
+    public async Task Routine_reminder_rejects_unrelated_targets_recipients_and_expired_events()
+    {
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
+        using var senior = await Actor(factory, AccountRole.Senior);
+        var id = await SeedOccurrence(factory, senior.Id, clock.GetUtcNow());
+        await using var scope = factory.Services.CreateAsyncScope();
+        var source = scope.ServiceProvider.GetRequiredService<RoutineReminderSource>();
+        var reminder = new NotificationEvent(Guid.CreateVersion7(), senior.Id, senior.Id, NotificationType.RoutineReminder,
+            "Przypomnienie", "Otwórz aplikację.", NotificationTargetKind.TaskOccurrence, id, clock.GetUtcNow().AddMinutes(5));
+        Assert.True(await source.IsRelevantAsync(reminder, CancellationToken.None));
+        Assert.False(await source.IsRelevantAsync(reminder with { Type = NotificationType.Sos }, CancellationToken.None));
+        Assert.False(await source.IsRelevantAsync(reminder with { TargetKind = NotificationTargetKind.Incident }, CancellationToken.None));
+        Assert.False(await source.IsRelevantAsync(reminder with { RecipientAccountId = Guid.CreateVersion7() }, CancellationToken.None));
+        Assert.False(await source.IsRelevantAsync(reminder with { ExpiresAt = clock.GetUtcNow() }, CancellationToken.None));
+        Assert.False(await source.IsRelevantAsync(reminder with { TargetId = Guid.CreateVersion7() }, CancellationToken.None));
+    }
+
+    [PostgresFact]
     public async Task Inactive_task_does_not_send_a_recent_past_occurrence_even_when_history_remains_pending()
     {
         var clock = new TestClock();
@@ -363,6 +488,36 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         Assert.Equal(5, sender.Sms.Count);
     }
 
+    [PostgresFact]
+    public async Task Sms_provider_exception_is_retried_without_creating_a_second_notification()
+    {
+        var clock = new TestClock();
+        await using var factory = Factory(clock);
+        using var senior = await Actor(factory, AccountRole.Senior);
+        using var caretaker = await Actor(factory, AccountRole.Caretaker);
+        await Link(senior, caretaker);
+        await using (var scope = factory.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<INotificationsFacade>().EnqueueAsync("test",
+                new NotificationEvent(Guid.CreateVersion7(), caretaker.Id, senior.Id, NotificationType.Sos,
+                    "Alarm", "Otwórz aplikację.", NotificationTargetKind.Incident, Guid.CreateVersion7(), null), CancellationToken.None);
+        var sender = factory.Services.GetRequiredService<RecordingSender>();
+        sender.ThrowOnce = true;
+
+        await Process(factory);
+        var initial = Assert.Single((await Inbox(caretaker)).Items);
+        Assert.Contains(initial.Deliveries, row => row.Channel == "sms" && row.Status == "pending");
+        await Process(factory);
+        Assert.Single(sender.Sms);
+
+        clock.Advance(TimeSpan.FromSeconds(15));
+        await Process(factory);
+        var retried = Assert.Single((await Inbox(caretaker)).Items);
+        Assert.Equal(initial.NotificationId, retried.NotificationId);
+        Assert.Contains(retried.Deliveries, row => row.Channel == "sms" && row.Status == "sent");
+        Assert.Equal(2, sender.Sms.Count);
+        Assert.Single(sender.Sms.Distinct());
+    }
+
     private WebApplicationFactory<Program> Factory(TestClock clock) => fixture.Factory().WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
         {
@@ -423,9 +578,15 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
     {
         public List<string> Sms { get; } = [];
         public int Failures { get; set; }
+        public bool ThrowOnce { get; set; }
         public Task<DeliverySendResult> SendAsync(string idempotencyKey, string phoneNumber, string message, CancellationToken cancellationToken)
         {
             lock (Sms) Sms.Add(idempotencyKey);
+            if (ThrowOnce)
+            {
+                ThrowOnce = false;
+                throw new HttpRequestException("Provider disconnected.");
+            }
             return Task.FromResult(Failures-- > 0
                 ? new DeliverySendResult(false, ErrorCode: "temporary")
                 : new DeliverySendResult(true, idempotencyKey));
@@ -436,14 +597,27 @@ public sealed class NotificationTests(IdentityApiFixture fixture)
         public string Name => "test";
         public NotificationEvent? Event { get; set; }
         public bool FailCompletion { get; set; }
+        public bool FailPreparation { get; init; }
+        public IReadOnlyList<PendingNotificationEvent>? Pending { get; init; }
+        public ConcurrentQueue<Guid> Retried { get; } = new();
+        public Action<CancellationToken>? OnRelevanceCheck { get; init; }
         public bool Completed { get; private set; }
-        public Task PrepareAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PrepareAsync(CancellationToken cancellationToken) =>
+            FailPreparation ? throw new InvalidOperationException("Source unavailable.") : Task.CompletedTask;
         public Task<IReadOnlyList<PendingNotificationEvent>> ReadPendingAsync(int limit, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<PendingNotificationEvent>>(Event is null || Completed ? [] : [new(Event.EventId, 1, JsonSerializer.Serialize(Event))]);
-        public Task<bool> IsRelevantAsync(NotificationEvent notification, CancellationToken cancellationToken) => Task.FromResult(true);
+            Task.FromResult<IReadOnlyList<PendingNotificationEvent>>(Pending ?? (Event is null || Completed ? [] : [new(Event.EventId, 1, JsonSerializer.Serialize(Event))]));
+        public Task<bool> IsRelevantAsync(NotificationEvent notification, CancellationToken cancellationToken)
+        {
+            OnRelevanceCheck?.Invoke(cancellationToken);
+            return Task.FromResult(true);
+        }
         public Task CompleteAsync(Guid eventId, CancellationToken cancellationToken)
         { if (FailCompletion) { FailCompletion = false; throw new InvalidOperationException("Simulated failure after enqueue."); } Completed = true; return Task.CompletedTask; }
-        public Task RetryAsync(Guid eventId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task RetryAsync(Guid eventId, CancellationToken cancellationToken)
+        {
+            Retried.Enqueue(eventId);
+            return Task.CompletedTask;
+        }
     }
     private async Task<TestActor> Actor(WebApplicationFactory<Program> factory, AccountRole role)
     {

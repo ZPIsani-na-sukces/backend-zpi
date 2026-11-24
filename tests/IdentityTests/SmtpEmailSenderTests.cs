@@ -83,6 +83,25 @@ public sealed class SmtpEmailSenderTests
     }
 
     [Fact]
+    public async Task Development_email_simulates_both_general_and_verification_messages_without_SMTP()
+    {
+        var smtp = new RecordingSmtpClient();
+        var services = Services(new Dictionary<string, string?>(), Environments.Development);
+        services.AddSingleton<Func<ISmtpClient>>(() => smtp);
+        using var provider = services.BuildServiceProvider();
+        var email = provider.GetRequiredService<IEmailSender>();
+        var codes = provider.GetRequiredService<IEmailCodeSender>();
+        Assert.True(email.IsAvailable);
+        Assert.True(codes.IsAvailable);
+
+        var message = new EmailMessage(Guid.CreateVersion7(), "test@example.test", "Raport", "Treść");
+        await email.SendAsync(message, CancellationToken.None);
+        await codes.SendAsync(new EmailCodeDelivery(Guid.CreateVersion7(), message.To, "012345",
+            ChallengePurpose.EmailVerification, DateTimeOffset.UtcNow.AddMinutes(5)), CancellationToken.None);
+        Assert.Null(smtp.Connection);
+    }
+
+    [Fact]
     public void Configured_SMTP_is_used_in_development_and_production()
     {
         foreach (var environment in new[] { Environments.Development, Environments.Production })

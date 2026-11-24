@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Amazon.S3;
 using Amazon.S3.Model;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Zpi.Modules.MedicalRecords.Application;
 using Zpi.Modules.MedicalRecords.Application.Files;
@@ -104,6 +105,6 @@ public sealed class S3MedicalFileStorage(Lazy<IAmazonS3> client, IOptions<Medica
     public static bool IsKey(string key) => key.StartsWith(KeyPrefix, StringComparison.Ordinal) && Guid.TryParseExact(key[KeyPrefix.Length..], "N", out _);
     private static string ObjectKey(string key) => IsKey(key) ? key[StoragePrefix.Length..] : throw new InvalidOperationException("Invalid S3 storage key.");
     private static bool IsStorageError(Exception exception, CancellationToken cancellationToken) =>
-        exception is AmazonS3Exception or HttpRequestException or IOException ||
+        exception is AmazonS3Exception or HttpRequestException or IOException and not BadHttpRequestException ||
         exception is OperationCanceledException && !cancellationToken.IsCancellationRequested;
 }
